@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
                         ParseableNavGraph(
                             navController = navController,
                             startDestination = startDestination!!,
+                            repository = repository,
                         )
                     } else {
                         Box(

@@ -40,8 +40,8 @@ class ParseableRepository @Inject constructor(
         return result
     }
 
-    private var streamsCache: CacheEntry<List<LogStream>>? = null
-    private var aboutCache: CacheEntry<AboutInfo>? = null
+    @Volatile private var streamsCache: CacheEntry<List<LogStream>>? = null
+    @Volatile private var aboutCache: CacheEntry<AboutInfo>? = null
     private val schemaCache = ConcurrentHashMap<String, CacheEntry<StreamSchema>>()
     private val statsCache = ConcurrentHashMap<String, CacheEntry<StreamStats>>()
 

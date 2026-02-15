@@ -208,6 +208,11 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun executeCustomSql(sql: String) {
+        val trimmed = sql.trim()
+        if (!trimmed.uppercase().startsWith("SELECT")) {
+            _state.update { it.copy(error = "Only SELECT queries are allowed") }
+            return
+        }
         _state.update { it.copy(filters = it.filters.copy(customSql = sql)) }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }

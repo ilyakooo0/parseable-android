@@ -35,10 +35,24 @@ class SettingsRepository @Inject constructor(
     private val configMutex = Mutex()
 
     private val encryptedPrefs: SharedPreferences by lazy {
+        try {
+            createEncryptedPrefs()
+        } catch (e: Exception) {
+            // Keystore corruption (common after backup/restore). Delete and recreate.
+            Timber.e(e, "EncryptedSharedPreferences corrupted, resetting")
+            try {
+                val prefsFile = java.io.File(context.filesDir.parent, "shared_prefs/parseable_secure_prefs.xml")
+                if (prefsFile.exists()) prefsFile.delete()
+            } catch (_: Exception) { /* best-effort cleanup */ }
+            createEncryptedPrefs()
+        }
+    }
+
+    private fun createEncryptedPrefs(): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
             "parseable_secure_prefs",
             masterKey,

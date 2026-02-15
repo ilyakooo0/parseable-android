@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
 import androidx.core.content.FileProvider
+import com.parseable.android.data.escapeIdentifier
 import com.parseable.android.data.formatTimestamp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -331,6 +332,9 @@ fun LogViewerScreen(
                     }
                 } else {
                     val listState = rememberLazyListState()
+                    val clipboard = remember {
+                        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    }
 
                     // Auto-load more when scrolling near the bottom
                     if (state.hasMore && !state.isLoading) {
@@ -361,6 +365,7 @@ fun LogViewerScreen(
                                 onClick = {
                                     expandedLogKey = if (expandedLogKey == key) null else key
                                 },
+                                clipboardManager = clipboard,
                                 onCopied = {
                                     scope.launch {
                                         snackbarHostState.showSnackbar(
@@ -454,6 +459,8 @@ fun LogViewerScreen(
                                     if (!dir.mkdirs() && !dir.isDirectory) {
                                         throw java.io.IOException("Failed to create shared_logs directory")
                                     }
+                                    // Clean up previous exports
+                                    dir.listFiles()?.forEach { old -> old.delete() }
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                                     val file = java.io.File(dir, "logs_$safeFileName.json")
                                     file.bufferedWriter().use { writer ->
@@ -607,10 +614,11 @@ fun LogEntryCard(
     isExpanded: Boolean,
     onClick: () -> Unit,
     onCopied: () -> Unit = {},
+    clipboardManager: android.content.ClipboardManager? = null,
 ) {
-    val context = LocalContext.current
-    val clipboardManager = remember {
-        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val resolvedClipboard = clipboardManager ?: run {
+        val context = LocalContext.current
+        remember { context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager }
     }
     val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     val cardColors = CardDefaults.cardColors(containerColor = containerColor)
@@ -669,7 +677,7 @@ fun LogEntryCard(
                     IconButton(
                         onClick = {
                             val text = prettyJson.encodeToString(JsonObject.serializer(), logEntry)
-                            clipboardManager.setPrimaryClip(
+                            resolvedClipboard.setPrimaryClip(
                                 android.content.ClipData.newPlainText("Log entry", text)
                             )
                             onCopied()
@@ -717,11 +725,14 @@ fun LogEntryCard(
  * (e.g., new logs prepended during streaming). Uses p_timestamp + p_metadata to form a
  * content-based identity, falling back to a hash of the entire entry.
  */
+private var logKeyCounter = 0L
+
 private fun stableLogKey(log: JsonObject): String {
     val ts = log["p_timestamp"]?.toString()
     val meta = log["p_metadata"]?.toString()
-    val hash = log.hashCode()
-    return if (ts != null) "$ts|${meta.orEmpty()}|$hash" else log.toString()
+    val tag = log["p_tags"]?.toString()
+    // Use multiple fields for content identity; append a monotonic counter to guarantee uniqueness
+    return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}|${logKeyCounter++}" else "${log}|${logKeyCounter++}"
 }
 
 private fun formatJsonValue(element: JsonElement): String {
@@ -887,10 +898,11 @@ fun SqlQueryBottomSheet(
     onDismiss: () -> Unit,
     onExecute: (String) -> Unit,
 ) {
+    val safeName = remember(streamName) { escapeIdentifier(streamName) }
     var sql by remember {
         mutableStateOf(
             currentSql.ifEmpty {
-                "SELECT * FROM \"$streamName\" ORDER BY p_timestamp DESC LIMIT 100"
+                "SELECT * FROM \"$safeName\" ORDER BY p_timestamp DESC LIMIT 100"
             }
         )
     }

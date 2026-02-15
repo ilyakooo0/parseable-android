@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -40,16 +41,15 @@ class LoginViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            settingsRepository.serverConfig.collect { config ->
-                if (config != null) {
-                    _state.update {
-                        it.copy(
-                            serverUrl = config.serverUrl,
-                            username = config.username,
-                            allowInsecure = !config.useTls,
-                            hasSavedCredentials = true,
-                        )
-                    }
+            val config = settingsRepository.serverConfig.first()
+            if (config != null) {
+                _state.update {
+                    it.copy(
+                        serverUrl = config.serverUrl,
+                        username = config.username,
+                        allowInsecure = !config.useTls,
+                        hasSavedCredentials = true,
+                    )
                 }
             }
         }
@@ -58,8 +58,7 @@ class LoginViewModel @Inject constructor(
     fun loginWithSavedCredentials() {
         viewModelScope.launch {
             val config = settingsRepository.getSavedPassword() ?: return@launch
-            _state.update { it.copy(password = config.password) }
-            onLogin()
+            performLogin(config.password)
         }
     }
 
@@ -113,59 +112,64 @@ class LoginViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            performLogin(current.password)
+        }
+    }
 
-            var url = current.serverUrl.trim()
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                url = if (current.allowInsecure) "http://$url" else "https://$url"
+    private suspend fun performLogin(password: String) {
+        val current = _state.value
+        _state.update { it.copy(isLoading = true, error = null) }
+
+        var url = current.serverUrl.trim()
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = if (current.allowInsecure) "http://$url" else "https://$url"
+        }
+
+        val host = url.removePrefix("http://").removePrefix("https://")
+            .substringBefore("/").substringBefore(":")
+        if (!Patterns.WEB_URL.matcher(url).matches() || host.isBlank() || host.contains(" ")) {
+            _state.update {
+                it.copy(
+                    isLoading = false,
+                    serverUrlError = "Invalid URL format",
+                )
             }
+            return
+        }
 
-            val host = url.removePrefix("http://").removePrefix("https://")
-                .substringBefore("/").substringBefore(":")
-            if (!Patterns.WEB_URL.matcher(url).matches() || host.isBlank() || host.contains(" ")) {
+        val config = ServerConfig(
+            serverUrl = url,
+            username = current.username.trim(),
+            password = password,
+            useTls = url.startsWith("https"),
+        )
+
+        repository.configure(config)
+
+        when (val result = repository.testConnection()) {
+            is ApiResult.Success -> {
+                // Verify this is actually a Parseable server by fetching /about
+                when (val aboutResult = repository.getAbout()) {
+                    is ApiResult.Success -> {
+                        settingsRepository.saveServerConfig(config)
+                        _state.update { it.copy(isLoading = false, loginSuccess = true) }
+                    }
+                    is ApiResult.Error -> {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = "Server responded but doesn't appear to be Parseable: ${aboutResult.userMessage}",
+                            )
+                        }
+                    }
+                }
+            }
+            is ApiResult.Error -> {
                 _state.update {
                     it.copy(
                         isLoading = false,
-                        serverUrlError = "Invalid URL format",
+                        error = "Connection failed: ${result.userMessage}",
                     )
-                }
-                return@launch
-            }
-
-            val config = ServerConfig(
-                serverUrl = url,
-                username = current.username.trim(),
-                password = current.password,
-                useTls = url.startsWith("https"),
-            )
-
-            repository.configure(config)
-
-            when (val result = repository.testConnection()) {
-                is ApiResult.Success -> {
-                    // Verify this is actually a Parseable server by fetching /about
-                    when (val aboutResult = repository.getAbout()) {
-                        is ApiResult.Success -> {
-                            settingsRepository.saveServerConfig(config)
-                            _state.update { it.copy(isLoading = false, loginSuccess = true) }
-                        }
-                        is ApiResult.Error -> {
-                            _state.update {
-                                it.copy(
-                                    isLoading = false,
-                                    error = "Server responded but doesn't appear to be Parseable: ${aboutResult.userMessage}",
-                                )
-                            }
-                        }
-                    }
-                }
-                is ApiResult.Error -> {
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            error = "Connection failed: ${result.userMessage}",
-                        )
-                    }
                 }
             }
         }

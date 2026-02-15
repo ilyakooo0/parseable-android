@@ -7,6 +7,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import androidx.compose.runtime.LaunchedEffect
+import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.ui.screens.alerts.AlertsScreen
 import com.parseable.android.ui.screens.login.LoginScreen
 import com.parseable.android.ui.screens.logviewer.LogViewerScreen
@@ -36,6 +38,7 @@ object Routes {
 fun ParseableNavGraph(
     navController: NavHostController,
     startDestination: String,
+    repository: ParseableRepository? = null,
 ) {
     NavHost(
         navController = navController,
@@ -63,6 +66,14 @@ fun ParseableNavGraph(
             route = Routes.STREAMS,
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://streams" }),
         ) {
+            if (repository != null && !repository.isConfigured) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                return@composable
+            }
             StreamsScreen(
                 onStreamClick = { streamName ->
                     navController.navigate(Routes.logViewer(streamName)) {
@@ -92,6 +103,15 @@ fun ParseableNavGraph(
             arguments = listOf(navArgument("streamName") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://stream/{streamName}" }),
         ) { backStackEntry ->
+            // Guard: redirect to login if the API client isn't configured
+            if (repository != null && !repository.isConfigured) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                return@composable
+            }
             val streamName = URLDecoder.decode(
                 backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
             )
@@ -126,6 +146,14 @@ fun ParseableNavGraph(
             route = Routes.ALERTS,
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://alerts" }),
         ) {
+            if (repository != null && !repository.isConfigured) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                return@composable
+            }
             AlertsScreen(
                 onBack = { navController.popBackStack() },
             )

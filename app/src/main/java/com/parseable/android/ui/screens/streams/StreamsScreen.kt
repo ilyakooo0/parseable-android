@@ -35,13 +35,15 @@ fun StreamsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {
+        val favorites = state.favoriteNames
         val filtered = if (searchQuery.isBlank()) {
             state.streams
         } else {
             state.streams.filter { it.name.contains(searchQuery, ignoreCase = true) }
         }
-        // Sort favorites to the top
-        filtered.sortedByDescending { it.name in state.favoriteNames }
+        // Partition by favorites instead of full sort for O(n) vs O(n log n)
+        val (favs, rest) = filtered.partition { it.name in favorites }
+        favs + rest
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
