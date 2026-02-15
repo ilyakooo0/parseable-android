@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
                         startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
                     }
 
-                    if (startDestination != null) {
+                    val dest = startDestination
+                    if (dest != null) {
                         val navController = rememberNavController()
 
                         // Navigate to login on 401 auth errors
@@ -71,7 +72,7 @@ class MainActivity : ComponentActivity() {
 
                         ParseableNavGraph(
                             navController = navController,
-                            startDestination = startDestination!!,
+                            startDestination = dest,
                             repository = repository,
                         )
                     } else {

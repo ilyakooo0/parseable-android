@@ -10,6 +10,7 @@ import com.parseable.android.data.model.LogStream
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -110,12 +111,16 @@ class StreamsViewModel @Inject constructor(
     }
 
     private val statsSemaphore = Semaphore(8)
+    private var statsJob: Job? = null
 
     private fun loadStreamStats(streams: List<LogStream>) {
-        streams.forEach { stream ->
-            viewModelScope.launch {
-                statsSemaphore.withPermit {
-                    loadSingleStreamStats(stream.name)
+        statsJob?.cancel()
+        statsJob = viewModelScope.launch {
+            streams.forEach { stream ->
+                launch {
+                    statsSemaphore.withPermit {
+                        loadSingleStreamStats(stream.name)
+                    }
                 }
             }
         }
@@ -157,10 +162,8 @@ class StreamsViewModel @Inject constructor(
         }
     }
 
-    fun logout() {
-        viewModelScope.launch {
-            settingsRepository.clearConfig()
-            repository.clearCredentials()
-        }
+    suspend fun logout() {
+        settingsRepository.clearConfig()
+        repository.clearCredentials()
     }
 }

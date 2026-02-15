@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +31,7 @@ fun StreamsScreen(
     viewModel: StreamsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -215,8 +217,10 @@ fun StreamsScreen(
                 Button(
                     onClick = {
                         showLogoutConfirmation = false
-                        viewModel.logout()
-                        onLogout()
+                        scope.launch {
+                            viewModel.logout()
+                            onLogout()
+                        }
                     },
                 ) {
                     Text("Logout")

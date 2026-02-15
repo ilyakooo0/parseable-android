@@ -160,6 +160,14 @@ fun ParseableNavGraph(
         }
 
         composable(Routes.SETTINGS) {
+            if (repository != null && !repository.isConfigured) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                return@composable
+            }
             SettingsScreen(
                 onBack = { navController.popBackStack() },
             )

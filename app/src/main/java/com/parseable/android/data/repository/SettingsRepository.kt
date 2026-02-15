@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,9 +72,7 @@ class SettingsRepository @Inject constructor(
                 val url = prefs[serverUrlKey] ?: return@withLock null
                 val user = prefs[usernameKey] ?: return@withLock null
                 val pass = try {
-                    withContext(Dispatchers.IO) {
-                        encryptedPrefs.getString("password", null)
-                    }
+                    encryptedPrefs.getString("password", null)
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to read encrypted password")
                     null
@@ -86,6 +85,7 @@ class SettingsRepository @Inject constructor(
                 )
             }
         }
+        .flowOn(Dispatchers.IO)
 
     suspend fun getSavedPassword(): ServerConfig? = serverConfig.first()
 
