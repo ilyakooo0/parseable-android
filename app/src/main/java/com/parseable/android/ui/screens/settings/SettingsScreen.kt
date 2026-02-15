@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onAboutClick: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -216,6 +217,38 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         SettingsRow("App Version", BuildConfig.VERSION_NAME)
                         SettingsRow("Platform", "Android")
+                    }
+                }
+
+                // About
+                Card(
+                    onClick = onAboutClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Info,
+                            contentDescription = "About",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "About",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

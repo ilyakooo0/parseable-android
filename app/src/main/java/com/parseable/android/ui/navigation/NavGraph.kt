@@ -13,6 +13,7 @@ import com.parseable.android.ui.screens.alerts.AlertsScreen
 import com.parseable.android.ui.screens.login.LoginScreen
 import com.parseable.android.ui.screens.logviewer.LogViewerScreen
 import com.parseable.android.ui.screens.logviewer.StreamInfoScreen
+import com.parseable.android.ui.screens.about.AboutScreen
 import com.parseable.android.ui.screens.settings.SettingsScreen
 import com.parseable.android.ui.screens.streams.StreamsScreen
 import java.net.URLDecoder
@@ -25,6 +26,7 @@ object Routes {
     const val STREAM_INFO = "stream_info/{streamName}"
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
+    const val ABOUT = "about"
 
     fun login(sessionExpired: Boolean = false) =
         if (sessionExpired) "login?sessionExpired=true" else LOGIN
@@ -169,6 +171,25 @@ fun ParseableNavGraph(
                 return@composable
             }
             SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onAboutClick = {
+                    navController.navigate(Routes.ABOUT) {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+
+        composable(Routes.ABOUT) {
+            if (!repository.isConfigured) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                return@composable
+            }
+            AboutScreen(
                 onBack = { navController.popBackStack() },
             )
         }
