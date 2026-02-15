@@ -191,8 +191,8 @@ class LogViewerViewModel @Inject constructor(
                 removed = true
                 it.copy(
                     filters = it.filters.copy(
-                        activeFilters = it.filters.activeFilters.toMutableList().apply { removeAt(index) },
-                        filterClauses = it.filters.filterClauses.toMutableList().apply { removeAt(index) },
+                        activeFilters = it.filters.activeFilters.filterIndexed { i, _ -> i != index },
+                        filterClauses = it.filters.filterClauses.filterIndexed { i, _ -> i != index },
                     ),
                 )
             } else {

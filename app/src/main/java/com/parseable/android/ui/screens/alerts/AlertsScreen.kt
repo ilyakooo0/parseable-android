@@ -107,7 +107,11 @@ fun AlertsScreen(
                     itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: alert.name ?: "alert_$index" }) { _, alert ->
                         AlertCard(
                             alert = alert,
-                            onDelete = { viewModel.requestDelete(alert) },
+                            onDelete = if (alert.id != null) {
+                                { viewModel.requestDelete(alert) }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -125,7 +129,6 @@ fun AlertsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { alert.id?.let { viewModel.deleteAlert(it) } },
-                    enabled = alert.id != null,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
@@ -143,7 +146,7 @@ fun AlertsScreen(
 }
 
 @Composable
-private fun AlertCard(alert: Alert, onDelete: () -> Unit) {
+private fun AlertCard(alert: Alert, onDelete: (() -> Unit)?) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
@@ -191,11 +194,18 @@ private fun AlertCard(alert: Alert, onDelete: () -> Unit) {
                             },
                         )
                     }
-                    IconButton(onClick = onDelete) {
+                    IconButton(
+                        onClick = { onDelete?.invoke() },
+                        enabled = onDelete != null,
+                    ) {
                         Icon(
                             Icons.Filled.Delete,
-                            contentDescription = "Delete alert",
-                            tint = MaterialTheme.colorScheme.error,
+                            contentDescription = if (onDelete != null) "Delete alert" else "Cannot delete (no ID)",
+                            tint = if (onDelete != null) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }

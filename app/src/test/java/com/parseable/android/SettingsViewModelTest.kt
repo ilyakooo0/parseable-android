@@ -133,6 +133,20 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `load resets isLoading on unexpected exception`() = runTest {
+        coEvery { settingsRepository.serverConfig } returns flowOf(null)
+        coEvery { repository.getAbout() } throws RuntimeException("unexpected")
+        coEvery { repository.listUsers() } returns ApiResult.Success(emptyList())
+
+        val viewModel = SettingsViewModel(settingsRepository, repository)
+
+        val state = viewModel.state.value
+        assertFalse(state.isLoading)
+        assertNotNull(state.error)
+        assertTrue(state.error!!.contains("unexpected"))
+    }
+
+    @Test
     fun `load can be called again to refresh`() = runTest {
         coEvery { settingsRepository.serverConfig } returns flowOf(null)
         coEvery { repository.getAbout() } returns ApiResult.Error("fail", 500)

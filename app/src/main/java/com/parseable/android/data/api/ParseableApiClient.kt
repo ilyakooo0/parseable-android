@@ -10,6 +10,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.URLEncoder
 import java.net.UnknownHostException
@@ -94,6 +95,11 @@ class ParseableApiClient @Inject constructor() {
         config = ClientConfig("", "", false)
     }
 
+    fun shutdown() {
+        sharedPool.evictAll()
+        sharedDispatcher.executorService.shutdown()
+    }
+
     private fun encodePathSegment(segment: String): String =
         URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
 
@@ -122,6 +128,8 @@ class ParseableApiClient @Inject constructor() {
                 ApiResult.Error(message = "Connection timed out")
             } catch (e: UnknownHostException) {
                 ApiResult.Error(message = "Unable to resolve host \"${e.message}\"")
+            } catch (e: ConnectException) {
+                ApiResult.Error(message = "Connection refused. Is the server running?")
             } catch (e: SSLException) {
                 ApiResult.Error(message = "SSL error: ${e.message}. Check server certificate.")
             } catch (e: IOException) {

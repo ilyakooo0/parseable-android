@@ -97,6 +97,37 @@ class StreamInfoViewModelTest {
     }
 
     @Test
+    fun `load sets schemaFailed when schema request fails`() = runTest {
+        coEvery { repository.getStreamStats("s1") } returns ApiResult.Success(StreamStats())
+        coEvery { repository.getStreamSchema("s1") } returns ApiResult.Error("Schema error", 500)
+        coEvery { repository.getStreamRetention("s1") } returns ApiResult.Success(emptyList())
+        coEvery { repository.getStreamInfo("s1") } returns ApiResult.Success(JsonObject(emptyMap()))
+
+        viewModel.load("s1")
+
+        val state = viewModel.state.value
+        assertTrue(state.schemaFailed)
+        assertTrue(state.schema.isEmpty())
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun `load clears schemaFailed on successful schema load`() = runTest {
+        coEvery { repository.getStreamStats("s1") } returns ApiResult.Success(StreamStats())
+        coEvery { repository.getStreamSchema("s1") } returns ApiResult.Success(
+            StreamSchema(fields = listOf(SchemaField(name = "msg")))
+        )
+        coEvery { repository.getStreamRetention("s1") } returns ApiResult.Success(emptyList())
+        coEvery { repository.getStreamInfo("s1") } returns ApiResult.Success(JsonObject(emptyMap()))
+
+        viewModel.load("s1")
+
+        val state = viewModel.state.value
+        assertFalse(state.schemaFailed)
+        assertEquals(1, state.schema.size)
+    }
+
+    @Test
     fun `load cancels previous load when called again`() = runTest {
         coEvery { repository.getStreamStats(any()) } returns ApiResult.Success(StreamStats())
         coEvery { repository.getStreamSchema(any()) } returns ApiResult.Success(StreamSchema())
