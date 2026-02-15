@@ -60,7 +60,7 @@ fun StreamInfoScreen(
                 actions = {
                     IconButton(
                         onClick = { showDeleteConfirmation = true },
-                        enabled = !state.isDeleting,
+                        enabled = !state.isDeleting && !state.isLoading,
                     ) {
                         Icon(
                             Icons.Filled.Delete,

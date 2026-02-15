@@ -38,6 +38,9 @@ class ParseableApiClient @Inject constructor() {
         coerceInputValues = true
     }
 
+    private val sharedPool = okhttp3.ConnectionPool(5, 5, TimeUnit.MINUTES)
+    private val sharedDispatcher = okhttp3.Dispatcher()
+
     private val secureClient: OkHttpClient = buildClient(allowInsecure = false)
     private val insecureClient: OkHttpClient by lazy { buildClient(allowInsecure = true) }
 
@@ -49,6 +52,8 @@ class ParseableApiClient @Inject constructor() {
 
     private fun buildClient(allowInsecure: Boolean): OkHttpClient {
         val builder = OkHttpClient.Builder()
+            .connectionPool(sharedPool)
+            .dispatcher(sharedDispatcher)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -84,6 +89,10 @@ class ParseableApiClient @Inject constructor() {
     }
 
     val isConfigured: Boolean get() = config.baseUrl.isNotEmpty() && config.authHeader.isNotEmpty()
+
+    fun clearConfig() {
+        config = ClientConfig("", "", false)
+    }
 
     private fun encodePathSegment(segment: String): String =
         URLEncoder.encode(segment, "UTF-8").replace("+", "%20")

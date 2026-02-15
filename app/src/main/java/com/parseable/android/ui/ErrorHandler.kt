@@ -13,25 +13,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 
 /**
  * Central error handler that any screen can use to display error messages
  * via a global Snackbar. Access it through [LocalErrorHandler].
+ *
+ * Uses a [Channel] so that rapid-fire calls to [showError] queue messages
+ * rather than overwriting each other (which happened with StateFlow).
  */
 class ErrorHandler {
-    private val _error = MutableStateFlow<String?>(null)
-    val error = _error.asStateFlow()
+    private val _errors = Channel<String>(Channel.BUFFERED)
+    val errors = _errors.receiveAsFlow()
 
     fun showError(message: String) {
-        _error.value = message
-    }
-
-    fun clearError() {
-        _error.value = null
+        _errors.trySend(message)
     }
 }
 
@@ -57,15 +54,12 @@ fun GlobalErrorBoundary(
 
     // Collect errors and show them as Snackbars
     LaunchedEffect(errorHandler) {
-        errorHandler.error
-            .filterNotNull()
-            .collectLatest { message ->
-                snackbarHostState.showSnackbar(
-                    message = message,
-                    duration = SnackbarDuration.Short,
-                )
-                errorHandler.clearError()
-            }
+        errorHandler.errors.collect { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short,
+            )
+        }
     }
 
     androidx.compose.runtime.CompositionLocalProvider(

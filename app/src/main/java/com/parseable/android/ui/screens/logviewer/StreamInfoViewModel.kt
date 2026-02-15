@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.model.*
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,11 +34,13 @@ class StreamInfoViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(StreamInfoState())
     val state: StateFlow<StreamInfoState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     fun load(streamName: String) {
+        loadJob?.cancel()
         _state.update { it.copy(streamName = streamName, isLoading = true, error = null) }
 
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
                 val statsDeferred = async { repository.getStreamStats(streamName) }
                 val schemaDeferred = async { repository.getStreamSchema(streamName) }

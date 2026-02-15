@@ -152,7 +152,7 @@ class LoginViewModel @Inject constructor(
                 when (val aboutResult = repository.getAbout()) {
                     is ApiResult.Success -> {
                         settingsRepository.saveServerConfig(config)
-                        _state.update { it.copy(isLoading = false, loginSuccess = true) }
+                        _state.update { it.copy(isLoading = false, loginSuccess = true, password = "") }
                     }
                     is ApiResult.Error -> {
                         _state.update {

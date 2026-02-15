@@ -160,6 +160,7 @@ class StreamsViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch {
             settingsRepository.clearConfig()
+            repository.clearCredentials()
         }
     }
 }

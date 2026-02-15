@@ -34,7 +34,7 @@ class ParseableRepository @Inject constructor(
 
     private fun <T> checkAuth(result: ApiResult<T>): ApiResult<T> {
         if (result is ApiResult.Error && result.isUnauthorized) {
-            invalidateAll()
+            clearCredentials()
             _authErrorChannel.trySend(Unit)
         }
         return result
@@ -57,6 +57,11 @@ class ParseableRepository @Inject constructor(
         aboutCache = null
         schemaCache.clear()
         statsCache.clear()
+    }
+
+    fun clearCredentials() {
+        invalidateAll()
+        apiClient.clearConfig()
     }
 
     suspend fun testConnection(): ApiResult<String> = apiClient.checkLiveness()
@@ -129,8 +134,9 @@ class ParseableRepository @Inject constructor(
     ): ApiResult<List<JsonObject>> = checkAuth(apiClient.queryLogs(sql, startTime, endTime))
 
     suspend fun deleteStream(stream: String): ApiResult<String> {
-        invalidateAll()
-        return checkAuth(apiClient.deleteStream(stream))
+        return checkAuth(apiClient.deleteStream(stream)).also { result ->
+            if (result is ApiResult.Success) invalidateAll()
+        }
     }
 
     suspend fun listAlerts(): ApiResult<List<Alert>> = checkAuth(apiClient.listAlerts())

@@ -725,14 +725,15 @@ fun LogEntryCard(
  * (e.g., new logs prepended during streaming). Uses p_timestamp + p_metadata to form a
  * content-based identity, falling back to a hash of the entire entry.
  */
-private var logKeyCounter = 0L
+private val logKeyCounter = java.util.concurrent.atomic.AtomicLong(0)
 
 private fun stableLogKey(log: JsonObject): String {
     val ts = log["p_timestamp"]?.toString()
     val meta = log["p_metadata"]?.toString()
     val tag = log["p_tags"]?.toString()
+    val seq = logKeyCounter.getAndIncrement()
     // Use multiple fields for content identity; append a monotonic counter to guarantee uniqueness
-    return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}|${logKeyCounter++}" else "${log}|${logKeyCounter++}"
+    return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}|$seq" else "${log}|$seq"
 }
 
 private fun formatJsonValue(element: JsonElement): String {

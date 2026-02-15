@@ -42,7 +42,7 @@ class SettingsViewModel @Inject constructor(
 
     fun load() {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
+            _state.update { it.copy(isLoading = true, error = null) }
 
             val config = settingsRepository.serverConfig.first()
 
@@ -77,8 +77,8 @@ class SettingsViewModel @Inject constructor(
 
             _state.update {
                 it.copy(
-                    aboutInfo = (aboutResult as? ApiResult.Success)?.data ?: it.aboutInfo,
-                    users = userNames.ifEmpty { it.users },
+                    aboutInfo = (aboutResult as? ApiResult.Success)?.data,
+                    users = userNames,
                     isLoading = false,
                     error = errors,
                 )
