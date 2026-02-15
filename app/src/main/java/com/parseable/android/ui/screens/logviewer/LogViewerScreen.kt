@@ -38,6 +38,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
+private val prettyJson = Json { prettyPrint = true }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(
@@ -452,7 +454,6 @@ fun LogViewerScreen(
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                                     val file = java.io.File(dir, "logs_$safeFileName.json")
                                     file.bufferedWriter().use { writer ->
-                                        val prettyJson = Json { prettyPrint = true }
                                         logs.forEachIndexed { index, log ->
                                             writer.write(prettyJson.encodeToString(JsonObject.serializer(), log))
                                             if (index < logs.lastIndex) writer.newLine()
@@ -665,7 +666,6 @@ fun LogEntryCard(
                 ) {
                     IconButton(
                         onClick = {
-                            val prettyJson = Json { prettyPrint = true }
                             val text = prettyJson.encodeToString(JsonObject.serializer(), logEntry)
                             clipboardManager.setPrimaryClip(
                                 android.content.ClipData.newPlainText("Log entry", text)

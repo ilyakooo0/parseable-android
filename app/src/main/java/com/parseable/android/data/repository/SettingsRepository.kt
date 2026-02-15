@@ -2,7 +2,7 @@ package com.parseable.android.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
+import timber.log.Timber
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
@@ -49,7 +49,7 @@ class SettingsRepository @Inject constructor(
 
     val serverConfig: Flow<ServerConfig?> = context.dataStore.data
         .catch { e ->
-            Log.e("SettingsRepository", "Failed to read DataStore", e)
+            Timber.e(e, "Failed to read DataStore")
             emit(emptyPreferences())
         }
         .map { prefs ->
@@ -61,7 +61,7 @@ class SettingsRepository @Inject constructor(
                         encryptedPrefs.getString("password", null)
                     }
                 } catch (e: Exception) {
-                    Log.e("SettingsRepository", "Failed to read encrypted password", e)
+                    Timber.e(e, "Failed to read encrypted password")
                     null
                 } ?: return@withLock null
                 ServerConfig(
@@ -87,7 +87,7 @@ class SettingsRepository @Inject constructor(
                     encryptedPrefs.edit().putString("password", config.password).apply()
                 }
             } catch (e: Exception) {
-                Log.e("SettingsRepository", "Failed to save server config", e)
+                Timber.e(e, "Failed to save server config")
             }
         }
     }
@@ -100,7 +100,7 @@ class SettingsRepository @Inject constructor(
                     encryptedPrefs.edit().clear().apply()
                 }
             } catch (e: Exception) {
-                Log.e("SettingsRepository", "Failed to clear config", e)
+                Timber.e(e, "Failed to clear config")
             }
         }
     }

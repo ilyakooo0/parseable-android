@@ -98,15 +98,16 @@ class ParseableApiClient @Inject constructor() {
     private suspend fun executeRequest(request: Request): ApiResult<String> =
         withContext(Dispatchers.IO) {
             try {
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    ApiResult.Success(body)
-                } else {
-                    ApiResult.Error(
-                        message = body.ifEmpty { response.message },
-                        code = response.code
-                    )
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        ApiResult.Success(body)
+                    } else {
+                        ApiResult.Error(
+                            message = body.ifEmpty { response.message },
+                            code = response.code
+                        )
+                    }
                 }
             } catch (e: SocketTimeoutException) {
                 ApiResult.Error(message = "Connection timed out")
