@@ -1,3 +1,7 @@
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,6 +11,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val commitEpoch = providers.exec {
+    commandLine("git", "log", "-1", "--format=%ct")
+}.standardOutput.asText.get().trim().toLong()
+val commitTime = Instant.ofEpochSecond(commitEpoch).atZone(ZoneOffset.UTC)
+val dateVersionName = commitTime.format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
+val dateVersionCode = (commitEpoch / 60).toInt()
+
 android {
     namespace = "com.parseable.android"
     compileSdk = 35
@@ -15,8 +26,8 @@ android {
         applicationId = "com.parseable.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = libs.versions.appVersionCode.get().toInt()
-        versionName = libs.versions.appVersionName.get()
+        versionCode = dateVersionCode
+        versionName = dateVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
