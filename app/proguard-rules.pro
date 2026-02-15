@@ -1,7 +1,7 @@
 # Parseable Android ProGuard Rules
 
 # Keep kotlinx serialization
--keepattributes *Annotation*, InnerClasses
+-keepattributes *Annotation*, InnerClasses, Signature
 -dontnote kotlinx.serialization.AnnotationsKt
 
 -keepclassmembers class kotlinx.serialization.json.** {
@@ -28,3 +28,21 @@
 
 # Keep the custom X509TrustManager used for insecure TLS config
 -keep class com.parseable.android.data.api.ParseableApiClient { *; }
+
+# Google Tink (transitive dependency of androidx.security:security-crypto)
+# Tink's complex class hierarchy and use of Protobuf causes R8 crashes
+# in security-crypto alpha versions that ship incomplete consumer rules.
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
+
+# Protobuf Lite (Tink dependency)
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**
+
+# Annotation libraries referenced by Tink/Google libs but not always on classpath
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn org.checkerframework.**
+-dontwarn com.google.api.**
+-dontwarn com.google.j2objc.annotations.**
+-dontwarn sun.misc.Unsafe
