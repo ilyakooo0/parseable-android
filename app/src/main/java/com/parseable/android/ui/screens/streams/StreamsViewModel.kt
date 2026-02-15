@@ -95,7 +95,7 @@ class StreamsViewModel @Inject constructor(
                     is ApiResult.Success -> {
                         _state.update {
                             it.copy(
-                                streams = streamsResult.data,
+                                streams = streamsResult.data.sortedBy { s -> s.name.lowercase() },
                                 isLoading = false,
                             )
                         }
