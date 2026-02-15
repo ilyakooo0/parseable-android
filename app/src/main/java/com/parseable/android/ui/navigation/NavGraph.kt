@@ -47,13 +47,19 @@ fun ParseableNavGraph(
         composable(Routes.STREAMS) {
             StreamsScreen(
                 onStreamClick = { streamName ->
-                    navController.navigate(Routes.logViewer(streamName))
+                    navController.navigate(Routes.logViewer(streamName)) {
+                        launchSingleTop = true
+                    }
                 },
                 onAlertsClick = {
-                    navController.navigate(Routes.ALERTS)
+                    navController.navigate(Routes.ALERTS) {
+                        launchSingleTop = true
+                    }
                 },
                 onSettingsClick = {
-                    navController.navigate(Routes.SETTINGS)
+                    navController.navigate(Routes.SETTINGS) {
+                        launchSingleTop = true
+                    }
                 },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
@@ -72,7 +78,9 @@ fun ParseableNavGraph(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },
                 onStreamInfo = { name ->
-                    navController.navigate(Routes.streamInfo(name))
+                    navController.navigate(Routes.streamInfo(name)) {
+                        launchSingleTop = true
+                    }
                 },
             )
         }

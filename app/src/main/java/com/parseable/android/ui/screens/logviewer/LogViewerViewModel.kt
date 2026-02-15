@@ -256,6 +256,7 @@ class LogViewerViewModel @Inject constructor(
         val searchClause = if (searchFields.isNotEmpty()) {
             searchFields.joinToString(" OR ") { "\"$it\" ILIKE '%$safeSearch%'" }
         } else {
+            _state.update { it.copy(isLoading = false, error = "Search unavailable: stream schema not loaded") }
             return
         }
 

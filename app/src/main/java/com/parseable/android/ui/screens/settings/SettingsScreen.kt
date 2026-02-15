@@ -24,10 +24,6 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
-        viewModel.load()
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(

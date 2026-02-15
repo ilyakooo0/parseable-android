@@ -3,6 +3,7 @@ package com.parseable.android.data.repository
 import com.parseable.android.data.api.ParseableApiClient
 import com.parseable.android.data.model.*
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,8 +26,8 @@ class ParseableRepository @Inject constructor(
     }
 
     private var streamsCache: CacheEntry<List<LogStream>>? = null
-    private val schemaCache = mutableMapOf<String, CacheEntry<StreamSchema>>()
-    private val statsCache = mutableMapOf<String, CacheEntry<StreamStats>>()
+    private val schemaCache = ConcurrentHashMap<String, CacheEntry<StreamSchema>>()
+    private val statsCache = ConcurrentHashMap<String, CacheEntry<StreamStats>>()
 
     fun configure(config: ServerConfig) {
         apiClient.configure(config)
