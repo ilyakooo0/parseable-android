@@ -322,7 +322,7 @@ private fun StreamCard(
                     TextButton(
                         onClick = onRetryStats,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(24.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                     ) {
                         Text("Retry", style = MaterialTheme.typography.labelSmall)
                     }
