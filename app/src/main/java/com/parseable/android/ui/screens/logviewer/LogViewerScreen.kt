@@ -681,17 +681,19 @@ fun LogEntryCard(
                     IconButton(
                         onClick = {
                             val text = prettyJson.encodeToString(JsonObject.serializer(), logEntry)
-                            clipboardManager.setPrimaryClip(
-                                android.content.ClipData.newPlainText("Log entry", text)
-                            )
-                            onCopied()
+                            try {
+                                clipboardManager.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("Log entry", text)
+                                )
+                                onCopied()
+                            } catch (_: SecurityException) {
+                                // Some devices/custom ROMs restrict clipboard access
+                            }
                         },
-                        modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
                             Icons.Filled.ContentCopy,
                             contentDescription = "Copy log entry to clipboard",
-                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

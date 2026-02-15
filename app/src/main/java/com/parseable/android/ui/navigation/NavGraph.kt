@@ -38,7 +38,7 @@ object Routes {
 fun ParseableNavGraph(
     navController: NavHostController,
     startDestination: String,
-    repository: ParseableRepository? = null,
+    repository: ParseableRepository,
 ) {
     NavHost(
         navController = navController,
@@ -66,7 +66,7 @@ fun ParseableNavGraph(
             route = Routes.STREAMS,
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://streams" }),
         ) {
-            if (repository != null && !repository.isConfigured) {
+            if (!repository.isConfigured) {
                 LaunchedEffect(Unit) {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
@@ -104,7 +104,7 @@ fun ParseableNavGraph(
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://stream/{streamName}" }),
         ) { backStackEntry ->
             // Guard: redirect to login if the API client isn't configured
-            if (repository != null && !repository.isConfigured) {
+            if (!repository.isConfigured) {
                 LaunchedEffect(Unit) {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
@@ -146,7 +146,7 @@ fun ParseableNavGraph(
             route = Routes.ALERTS,
             deepLinks = listOf(navDeepLink { uriPattern = "parseable://alerts" }),
         ) {
-            if (repository != null && !repository.isConfigured) {
+            if (!repository.isConfigured) {
                 LaunchedEffect(Unit) {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
@@ -160,7 +160,7 @@ fun ParseableNavGraph(
         }
 
         composable(Routes.SETTINGS) {
-            if (repository != null && !repository.isConfigured) {
+            if (!repository.isConfigured) {
                 LaunchedEffect(Unit) {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }

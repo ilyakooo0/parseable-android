@@ -278,12 +278,11 @@ private fun StreamCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
-                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = onToggleFavorite) {
                     Icon(
                         if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
                         contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
                     )
                 }
                 Icon(
