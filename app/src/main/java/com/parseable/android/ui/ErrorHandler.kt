@@ -45,6 +45,7 @@ val LocalErrorHandler = compositionLocalOf<ErrorHandler> {
  * posted via the provided [ErrorHandler]. The handler is exposed to the
  * entire subtree through [LocalErrorHandler].
  */
+@Suppress("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun GlobalErrorBoundary(
     errorHandler: ErrorHandler = remember { ErrorHandler() },
@@ -72,7 +73,7 @@ fun GlobalErrorBoundary(
                 }
             },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        ) { _ ->
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
             ) {
