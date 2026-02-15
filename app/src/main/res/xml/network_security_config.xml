@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Cleartext (HTTP) is permitted because many Parseable instances are
+        self-hosted on private networks without TLS. The app defaults to HTTPS
+        and shows a security warning in the login screen when the user enables
+        the "Allow insecure" toggle.
+
+        Note: Android's domain-config with includeSubdomains does NOT support
+        IP subnet matching (e.g. 192.168.x.x), so whitelisting private IP
+        ranges is not possible via this config. Instead we allow cleartext
+        globally and rely on the app-level UI warning.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
