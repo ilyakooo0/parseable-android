@@ -43,6 +43,17 @@ An Android client for [Parseable](https://www.parseable.com/), the open-source l
 | `/api/v1/alerts` | GET | List alerts |
 | `/api/v1/user` | GET | List users |
 
+## Installation
+
+The recommended way to install Parseable Android is via [Obtainium](https://github.com/ImranR98/Obtainium), which will automatically notify you of new releases.
+
+1. Install [Obtainium](https://github.com/ImranR98/Obtainium) on your device.
+2. Open Obtainium and tap **Add App**.
+3. Enter this repository URL: `https://github.com/ilyakooo0/parseable-android`
+4. Tap **Add** — Obtainium will fetch the latest release APK and install it.
+
+Updates will be detected automatically whenever a new release is published.
+
 ## Building
 
 ```bash
