@@ -104,7 +104,7 @@ fun AlertsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: alert.name ?: "alert_$index" }) { _, alert ->
+                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: "alert_$index" }) { _, alert ->
                         AlertCard(
                             alert = alert,
                             onDelete = if (alert.id != null) {
@@ -124,7 +124,7 @@ fun AlertsScreen(
             onDismissRequest = viewModel::cancelDelete,
             title = { Text("Delete Alert") },
             text = {
-                Text("Are you sure you want to delete \"${alert.name ?: "this alert"}\"? This action cannot be undone.")
+                Text("Are you sure you want to delete \"${alert.displayName}\"? This action cannot be undone.")
             },
             confirmButton = {
                 TextButton(
@@ -165,10 +165,10 @@ private fun AlertCard(alert: Alert, onDelete: (() -> Unit)?) {
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
-                        if (alert.enabled == true) Icons.Filled.NotificationsActive
+                        if (alert.isEnabled) Icons.Filled.NotificationsActive
                         else Icons.Filled.NotificationsOff,
-                        contentDescription = if (alert.enabled == true) "Alert enabled" else "Alert disabled",
-                        tint = if (alert.enabled == true) {
+                        contentDescription = if (alert.isEnabled) "Alert enabled" else "Alert disabled",
+                        tint = if (alert.isEnabled) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -177,17 +177,20 @@ private fun AlertCard(alert: Alert, onDelete: (() -> Unit)?) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = alert.name ?: "Unnamed Alert",
+                        text = alert.displayName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (alert.enabled != null) {
+                    val stateLabel = alert.state ?: if (alert.enabled != null) {
+                        if (alert.enabled) "Enabled" else "Disabled"
+                    } else null
+                    if (stateLabel != null) {
                         Text(
-                            text = if (alert.enabled) "Enabled" else "Disabled",
+                            text = stateLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (alert.enabled) {
+                            color = if (alert.isEnabled) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -220,10 +223,20 @@ private fun AlertCard(alert: Alert, onDelete: (() -> Unit)?) {
                 )
             }
 
-            if (alert.stream != null) {
+            val streamText = alert.streamDisplay
+            if (streamText != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Stream: ${alert.stream}",
+                    text = "Stream: $streamText",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (alert.severity != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Severity: ${alert.severity}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -234,7 +247,16 @@ private fun AlertCard(alert: Alert, onDelete: (() -> Unit)?) {
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(8.dp))
 
+                if (alert.alertType != null) {
+                    Text(
+                        text = "Type: ${alert.alertType}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
                 if (alert.rule != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Rule:",
                         style = MaterialTheme.typography.labelMedium,
