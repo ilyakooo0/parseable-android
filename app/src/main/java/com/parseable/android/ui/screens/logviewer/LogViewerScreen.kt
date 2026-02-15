@@ -649,7 +649,9 @@ fun LogEntryCard(
     onCopied: () -> Unit = {},
     clipboardManager: android.content.ClipboardManager,
 ) {
-    val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val severity = remember(logEntry) { detectSeverity(logEntry) }
+    val severityTint = severityBackgroundColor(severity)
+    val containerColor = severityTint ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     val cardColors = CardDefaults.cardColors(containerColor = containerColor)
     Card(
         onClick = onClick,
