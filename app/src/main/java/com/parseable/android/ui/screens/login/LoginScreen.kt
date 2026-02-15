@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -33,7 +34,7 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
-    var passwordVisible by remember { mutableStateOf(false) }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
     val errorHandler = LocalErrorHandler.current
 
     LaunchedEffect(state.loginSuccess) {
@@ -199,7 +200,7 @@ fun LoginScreen(
                 onClick = viewModel::onLogin,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .defaultMinSize(minHeight = 50.dp),
                 enabled = !state.isLoading,
             ) {
                 if (state.isLoading) {
@@ -219,7 +220,7 @@ fun LoginScreen(
                     onClick = viewModel::loginWithSavedCredentials,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .defaultMinSize(minHeight = 50.dp),
                     enabled = !state.isLoading,
                 ) {
                     Text("Use saved credentials")

@@ -10,6 +10,7 @@ import com.parseable.android.data.model.LogStream
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -76,35 +77,44 @@ class StreamsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
-            // Fetch about info and streams in parallel
-            val aboutDeferred = async { repository.getAbout() }
-            val streamsDeferred = async { repository.listStreams(forceRefresh = true) }
+            try {
+                // Fetch about info and streams in parallel
+                val aboutDeferred = async { repository.getAbout() }
+                val streamsDeferred = async { repository.listStreams(forceRefresh = true) }
 
-            val aboutResult = aboutDeferred.await()
-            val streamsResult = streamsDeferred.await()
+                val aboutResult = aboutDeferred.await()
+                val streamsResult = streamsDeferred.await()
 
-            if (aboutResult is ApiResult.Success) {
-                _state.update { it.copy(aboutInfo = aboutResult.data) }
-            }
-
-            when (streamsResult) {
-                is ApiResult.Success -> {
-                    _state.update {
-                        it.copy(
-                            streams = streamsResult.data,
-                            isLoading = false,
-                        )
-                    }
-                    // Load stats for each stream in parallel
-                    loadStreamStats(streamsResult.data)
+                if (aboutResult is ApiResult.Success) {
+                    _state.update { it.copy(aboutInfo = aboutResult.data) }
                 }
-                is ApiResult.Error -> {
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            error = streamsResult.userMessage,
-                        )
+
+                when (streamsResult) {
+                    is ApiResult.Success -> {
+                        _state.update {
+                            it.copy(
+                                streams = streamsResult.data,
+                                isLoading = false,
+                            )
+                        }
+                        // Load stats for each stream in parallel
+                        loadStreamStats(streamsResult.data)
                     }
+                    is ApiResult.Error -> {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = streamsResult.userMessage,
+                            )
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                _state.update { it.copy(isLoading = false) }
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isLoading = false, error = e.message ?: "Failed to load streams")
                 }
             }
         }

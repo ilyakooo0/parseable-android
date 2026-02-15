@@ -127,6 +127,20 @@ class StreamsViewModelTest {
     }
 
     @Test
+    fun `refresh resets isLoading on unexpected exception`() = runTest {
+        coEvery { repository.getAbout() } throws RuntimeException("boom")
+        coEvery { repository.listStreams(forceRefresh = true) } returns ApiResult.Success(emptyList())
+
+        viewModel = StreamsViewModel(repository, settingsRepository, favoriteDao)
+        viewModel.refresh()
+
+        val state = viewModel.state.value
+        assertFalse(state.isLoading)
+        assertNotNull(state.error)
+        assertTrue(state.error!!.contains("boom"))
+    }
+
+    @Test
     fun `toggleFavorite removes when already favorited`() = runTest {
         every { favoriteDao.getAllNames() } returns flowOf(listOf("existing"))
 
