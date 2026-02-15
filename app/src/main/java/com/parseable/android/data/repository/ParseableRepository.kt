@@ -34,6 +34,7 @@ class ParseableRepository @Inject constructor(
 
     private fun <T> checkAuth(result: ApiResult<T>): ApiResult<T> {
         if (result is ApiResult.Error && result.isUnauthorized) {
+            invalidateAll()
             _authErrorChannel.trySend(Unit)
         }
         return result

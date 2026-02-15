@@ -18,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+private val prettyJson = Json { prettyPrint = true }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StreamInfoScreen(
@@ -34,7 +36,10 @@ fun StreamInfoScreen(
     }
 
     LaunchedEffect(state.deleteSuccess) {
-        if (state.deleteSuccess) onStreamDeleted()
+        if (state.deleteSuccess) {
+            viewModel.consumeDeleteSuccess()
+            onStreamDeleted()
+        }
     }
 
     Scaffold(
@@ -80,9 +85,8 @@ fun StreamInfoScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Stats section
-                if (state.stats != null) {
+                state.stats?.let { stats ->
                     InfoSection(title = "Statistics") {
-                        val stats = state.stats!!
                         InfoRow("Event Count", stats.ingestion?.count?.toString() ?: stats.ingestion?.lifetimeCount?.toString() ?: "N/A")
                         InfoRow("Ingestion Size", stats.ingestion?.size ?: stats.ingestion?.lifetimeSize ?: "N/A")
                         InfoRow("Storage Size", stats.storage?.size ?: stats.storage?.lifetimeSize ?: "N/A")
@@ -121,10 +125,9 @@ fun StreamInfoScreen(
                 }
 
                 // Raw info section
-                if (state.rawInfo != null) {
-                    val prettyInfo = remember(state.rawInfo) {
-                        val prettyJson = Json { prettyPrint = true }
-                        prettyJson.encodeToString(JsonObject.serializer(), state.rawInfo!!)
+                state.rawInfo?.let { rawInfo ->
+                    val prettyInfo = remember(rawInfo) {
+                        prettyJson.encodeToString(JsonObject.serializer(), rawInfo)
                     }
                     InfoSection(title = "Stream Info") {
                         Text(
@@ -135,14 +138,14 @@ fun StreamInfoScreen(
                     }
                 }
 
-                if (state.error != null) {
+                state.error?.let { errorText ->
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                         ),
                     ) {
                         Text(
-                            text = state.error!!,
+                            text = errorText,
                             modifier = Modifier.padding(16.dp),
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )

@@ -2,7 +2,7 @@ package com.parseable.android.ui.screens.alerts
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -63,7 +63,7 @@ fun AlertsScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = state.error!!,
+                            text = state.error.orEmpty(),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -98,7 +98,7 @@ fun AlertsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.alerts, key = { it.id ?: it.name ?: "alert_${state.alerts.indexOf(it)}" }) { alert ->
+                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: alert.name ?: "alert_$index" }) { _, alert ->
                         AlertCard(
                             alert = alert,
                             onDelete = { viewModel.requestDelete(alert) },
@@ -119,6 +119,7 @@ fun AlertsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { alert.id?.let { viewModel.deleteAlert(it) } },
+                    enabled = alert.id != null,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),

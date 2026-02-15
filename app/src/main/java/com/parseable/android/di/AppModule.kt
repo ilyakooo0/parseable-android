@@ -22,6 +22,7 @@ object AppModule {
             .build()
 
     @Provides
+    @Singleton
     fun provideFavoriteStreamDao(db: ParseableDatabase): FavoriteStreamDao =
         db.favoriteStreamDao()
 }

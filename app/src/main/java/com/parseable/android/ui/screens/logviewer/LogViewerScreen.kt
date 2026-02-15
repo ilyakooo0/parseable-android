@@ -58,6 +58,7 @@ fun LogViewerScreen(
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showShareWarning by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
 
     LaunchedEffect(streamName) {
         viewModel.initialize(streamName)
@@ -286,7 +287,7 @@ fun LogViewerScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = state.error!!,
+                                text = state.error.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(horizontal = 32.dp),
@@ -450,7 +451,9 @@ fun LogViewerScreen(
                             try {
                                 val file = withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     val dir = java.io.File(context.cacheDir, "shared_logs")
-                                    dir.mkdirs()
+                                    if (!dir.mkdirs() && !dir.isDirectory) {
+                                        throw java.io.IOException("Failed to create shared_logs directory")
+                                    }
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                                     val file = java.io.File(dir, "logs_$safeFileName.json")
                                     file.bufferedWriter().use { writer ->
@@ -498,7 +501,6 @@ fun LogViewerScreen(
 
     // Custom date range picker
     if (showDateRangePicker) {
-        val dateRangePickerState = rememberDateRangePickerState()
         DatePickerDialog(
             onDismissRequest = { showDateRangePicker = false },
             confirmButton = {
@@ -718,7 +720,8 @@ fun LogEntryCard(
 private fun stableLogKey(log: JsonObject): String {
     val ts = log["p_timestamp"]?.toString()
     val meta = log["p_metadata"]?.toString()
-    return if (ts != null) "$ts|${meta.orEmpty()}" else log.toString()
+    val hash = log.hashCode()
+    return if (ts != null) "$ts|${meta.orEmpty()}|$hash" else log.toString()
 }
 
 private fun formatJsonValue(element: JsonElement): String {
@@ -859,11 +862,11 @@ fun FilterBottomSheet(
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (selectedColumn.isNotEmpty()) {
+                        if (selectedColumn.isNotBlank()) {
                             onApplyFilter(selectedColumn, selectedOperator, filterValue)
                         }
                     },
-                    enabled = selectedColumn.isNotEmpty() &&
+                    enabled = selectedColumn.isNotBlank() &&
                         !hasValueError &&
                         (selectedOperator in listOf("IS NULL", "IS NOT NULL") || filterValue.isNotEmpty()),
                 ) {

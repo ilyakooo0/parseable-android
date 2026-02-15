@@ -224,7 +224,7 @@ fun LoginScreen(
                 }
             }
 
-            if (state.error != null) {
+            state.error?.let { errorText ->
                 Spacer(modifier = Modifier.height(16.dp))
                 Card(
                     colors = CardDefaults.cardColors(
@@ -233,7 +233,7 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = state.error!!,
+                        text = errorText,
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodyMedium,

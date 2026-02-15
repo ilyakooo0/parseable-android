@@ -38,32 +38,42 @@ class StreamInfoViewModel @Inject constructor(
         _state.update { it.copy(streamName = streamName, isLoading = true, error = null) }
 
         viewModelScope.launch {
-            val statsDeferred = async { repository.getStreamStats(streamName) }
-            val schemaDeferred = async { repository.getStreamSchema(streamName) }
-            val retentionDeferred = async { repository.getStreamRetention(streamName) }
-            val infoDeferred = async { repository.getStreamInfo(streamName) }
+            try {
+                val statsDeferred = async { repository.getStreamStats(streamName) }
+                val schemaDeferred = async { repository.getStreamSchema(streamName) }
+                val retentionDeferred = async { repository.getStreamRetention(streamName) }
+                val infoDeferred = async { repository.getStreamInfo(streamName) }
 
-            val statsResult = statsDeferred.await()
-            val schemaResult = schemaDeferred.await()
-            val retentionResult = retentionDeferred.await()
-            val infoResult = infoDeferred.await()
+                val statsResult = statsDeferred.await()
+                val schemaResult = schemaDeferred.await()
+                val retentionResult = retentionDeferred.await()
+                val infoResult = infoDeferred.await()
 
-            _state.update {
-                it.copy(
-                    stats = (statsResult as? ApiResult.Success)?.data,
-                    schema = (schemaResult as? ApiResult.Success)?.data?.fields ?: emptyList(),
-                    retention = (retentionResult as? ApiResult.Success)?.data ?: emptyList(),
-                    rawInfo = (infoResult as? ApiResult.Success)?.data,
-                    isLoading = false,
-                    error = listOfNotNull(
-                        (statsResult as? ApiResult.Error)?.userMessage,
-                        (schemaResult as? ApiResult.Error)?.userMessage,
-                        (retentionResult as? ApiResult.Error)?.userMessage,
-                        (infoResult as? ApiResult.Error)?.userMessage,
-                    ).distinct().joinToString("\n").ifEmpty { null },
-                )
+                _state.update {
+                    it.copy(
+                        stats = (statsResult as? ApiResult.Success)?.data,
+                        schema = (schemaResult as? ApiResult.Success)?.data?.fields ?: emptyList(),
+                        retention = (retentionResult as? ApiResult.Success)?.data ?: emptyList(),
+                        rawInfo = (infoResult as? ApiResult.Success)?.data,
+                        isLoading = false,
+                        error = listOfNotNull(
+                            (statsResult as? ApiResult.Error)?.userMessage,
+                            (schemaResult as? ApiResult.Error)?.userMessage,
+                            (retentionResult as? ApiResult.Error)?.userMessage,
+                            (infoResult as? ApiResult.Error)?.userMessage,
+                        ).distinct().joinToString("\n").ifEmpty { null },
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isLoading = false, error = e.message ?: "Failed to load stream info")
+                }
             }
         }
+    }
+
+    fun consumeDeleteSuccess() {
+        _state.update { it.copy(deleteSuccess = false) }
     }
 
     fun deleteStream() {
