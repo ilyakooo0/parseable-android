@@ -65,7 +65,7 @@ class SettingsViewModel @Inject constructor(
                 try {
                     obj["id"]?.jsonPrimitive?.content
                         ?: obj["username"]?.jsonPrimitive?.content
-                } catch (_: IllegalArgumentException) {
+                } catch (_: IllegalStateException) {
                     null
                 }
             } ?: emptyList()
