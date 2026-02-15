@@ -3,6 +3,8 @@ package com.parseable.android
 import com.parseable.android.data.model.AboutInfo
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.model.ServerConfig
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import com.parseable.android.ui.screens.settings.SettingsViewModel
@@ -60,7 +62,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `load sets about info on success`() = runTest {
-        val about = AboutInfo(version = "1.2.0", mode = "standalone", license = "AGPL")
+        val about = AboutInfo(version = "1.2.0", mode = "standalone", license = buildJsonObject { put("name", "AGPL") })
         coEvery { settingsRepository.serverConfig } returns flowOf(null)
         coEvery { repository.getAbout() } returns ApiResult.Success(about)
         coEvery { repository.listUsers() } returns ApiResult.Success(emptyList())

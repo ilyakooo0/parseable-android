@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.parseable.android.BuildConfig
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -153,7 +155,7 @@ fun SettingsScreen(
                             about.version?.let { SettingsRow("Version", it) }
                             about.commit?.let { SettingsRow("Commit", it.take(12)) }
                             about.mode?.let { SettingsRow("Mode", it) }
-                            about.license?.let { SettingsRow("License", it) }
+                            about.license?.get("name")?.jsonPrimitive?.contentOrNull?.let { SettingsRow("License", it) }
                             about.deploymentId?.let { SettingsRow("Deployment ID", it.take(12)) }
                             about.queryEngine?.let { SettingsRow("Query Engine", it) }
                         }
