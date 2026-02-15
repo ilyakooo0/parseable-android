@@ -64,7 +64,7 @@ class LoginViewModelTest {
     @Test
     fun `onLogin succeeds with valid credentials`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
-        coEvery { repository.getAbout() } returns ApiResult.Success(AboutInfo(version = "1.0"))
+        coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo(version = "1.0"))
 
         viewModel.onServerUrlChange("https://test.parseable.com")
         viewModel.onUsernameChange("admin")
@@ -95,7 +95,7 @@ class LoginViewModelTest {
     @Test
     fun `onLogin fails when about check fails`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
-        coEvery { repository.getAbout() } returns ApiResult.Error("not parseable", 404)
+        coEvery { repository.verifyServer() } returns ApiResult.Error("not parseable", 404)
 
         viewModel.onServerUrlChange("https://test.com")
         viewModel.onUsernameChange("admin")
@@ -106,6 +106,23 @@ class LoginViewModelTest {
         assertFalse(state.loginSuccess)
         assertNotNull(state.error)
         assertTrue(state.error!!.contains("doesn't appear to be Parseable"))
+    }
+
+    @Test
+    fun `onLogin shows invalid credentials on 401`() = runTest {
+        coEvery { repository.testConnection() } returns ApiResult.Success("ok")
+        coEvery { repository.verifyServer() } returns ApiResult.Error("Unauthorized", 401)
+
+        viewModel.onServerUrlChange("https://test.parseable.com")
+        viewModel.onUsernameChange("admin")
+        viewModel.onPasswordChange("wrongpass")
+        viewModel.onLogin()
+
+        val state = viewModel.state.value
+        assertFalse(state.loginSuccess)
+        assertNotNull(state.error)
+        assertTrue(state.error!!.contains("Invalid credentials"))
+        assertFalse(state.error!!.contains("doesn't appear to be Parseable"))
     }
 
     @Test
@@ -147,7 +164,7 @@ class LoginViewModelTest {
     @Test
     fun `onLogin prepends https when not insecure`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
-        coEvery { repository.getAbout() } returns ApiResult.Success(AboutInfo())
+        coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo())
 
         viewModel.onServerUrlChange("test.parseable.com")
         viewModel.onUsernameChange("admin")
@@ -162,7 +179,7 @@ class LoginViewModelTest {
     @Test
     fun `onLogin prepends http when insecure`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
-        coEvery { repository.getAbout() } returns ApiResult.Success(AboutInfo())
+        coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo())
 
         viewModel.onServerUrlChange("test.parseable.com")
         viewModel.onAllowInsecureChange(true)
@@ -172,6 +189,41 @@ class LoginViewModelTest {
 
         coVerify {
             repository.configure(match { it.serverUrl == "http://test.parseable.com" })
+        }
+    }
+
+    @Test
+    fun `onLogin handles uppercase URL scheme`() = runTest {
+        coEvery { repository.testConnection() } returns ApiResult.Success("ok")
+        coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo())
+
+        viewModel.onServerUrlChange("HTTPS://test.parseable.com")
+        viewModel.onUsernameChange("admin")
+        viewModel.onPasswordChange("pass")
+        viewModel.onLogin()
+
+        coVerify {
+            repository.configure(match {
+                it.serverUrl == "HTTPS://test.parseable.com" && it.useTls
+            })
+        }
+    }
+
+    @Test
+    fun `onLogin handles mixed case URL scheme`() = runTest {
+        coEvery { repository.testConnection() } returns ApiResult.Success("ok")
+        coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo())
+
+        viewModel.onServerUrlChange("Http://test.parseable.com")
+        viewModel.onAllowInsecureChange(true)
+        viewModel.onUsernameChange("admin")
+        viewModel.onPasswordChange("pass")
+        viewModel.onLogin()
+
+        coVerify {
+            repository.configure(match {
+                it.serverUrl == "Http://test.parseable.com" && !it.useTls
+            })
         }
     }
 }

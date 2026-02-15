@@ -66,6 +66,20 @@ class ParseableRepository @Inject constructor(
 
     suspend fun testConnection(): ApiResult<String> = apiClient.checkLiveness()
 
+    /**
+     * Verify this is a Parseable server and credentials are valid.
+     * Does NOT trigger [checkAuth] so the global auth-error handler won't fire during login.
+     */
+    suspend fun verifyServer(): ApiResult<AboutInfo> {
+        return when (val result = apiClient.getAbout()) {
+            is ApiResult.Success -> {
+                aboutCache = CacheEntry(result.data)
+                result
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
     suspend fun getAbout(): ApiResult<AboutInfo> {
         aboutCache?.let { if (it.isValid(ABOUT_TTL_MS)) return ApiResult.Success(it.data) }
         return checkAuth(apiClient.getAbout()).also { result ->
