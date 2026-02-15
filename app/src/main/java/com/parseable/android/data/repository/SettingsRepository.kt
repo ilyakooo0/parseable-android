@@ -55,11 +55,11 @@ class SettingsRepository @Inject constructor(
             prefs[usernameKey] = config.username
             prefs[useTlsKey] = config.useTls
         }
-        encryptedPrefs.edit().putString("password", config.password).apply()
+        encryptedPrefs.edit().putString("password", config.password).commit()
     }
 
     suspend fun clearConfig() {
         context.dataStore.edit { it.clear() }
-        encryptedPrefs.edit().clear().apply()
+        encryptedPrefs.edit().clear().commit()
     }
 }

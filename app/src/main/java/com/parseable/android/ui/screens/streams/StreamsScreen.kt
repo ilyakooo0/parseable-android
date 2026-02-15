@@ -79,7 +79,7 @@ fun StreamsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             Icons.Filled.ErrorOutline,
-                            contentDescription = null,
+                            contentDescription = "Error",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error,
                         )
@@ -103,7 +103,7 @@ fun StreamsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             Icons.Filled.Inbox,
-                            contentDescription = null,
+                            contentDescription = "No streams",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -125,6 +125,7 @@ fun StreamsScreen(
                         StreamCard(
                             streamName = stream.name,
                             stats = stats,
+                            statsFailed = stream.name in state.failedStats,
                             onClick = { onStreamClick(stream.name) },
                         )
                     }
@@ -138,6 +139,7 @@ fun StreamsScreen(
 private fun StreamCard(
     streamName: String,
     stats: StreamsViewModel.StreamStatsUi?,
+    statsFailed: Boolean = false,
     onClick: () -> Unit,
 ) {
     Card(
@@ -160,7 +162,7 @@ private fun StreamCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Filled.Storage,
-                        contentDescription = null,
+                        contentDescription = "Log stream",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
                     )
@@ -173,7 +175,7 @@ private fun StreamCard(
                 }
                 Icon(
                     Icons.Filled.ChevronRight,
-                    contentDescription = null,
+                    contentDescription = "Open stream",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -194,6 +196,13 @@ private fun StreamCard(
                         StatChip(label = "Storage", value = stats.storageSize)
                     }
                 }
+            } else if (statsFailed) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Stats unavailable",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -22,6 +22,7 @@ import javax.inject.Inject
 data class StreamsState(
     val streams: List<LogStream> = emptyList(),
     val streamStats: Map<String, StreamsViewModel.StreamStatsUi> = emptyMap(),
+    val failedStats: Set<String> = emptySet(),
     val aboutInfo: AboutInfo? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -85,6 +86,7 @@ class StreamsViewModel @Inject constructor(
     private fun loadStreamStats(streams: List<LogStream>) {
         viewModelScope.launch {
             val statsMap = mutableMapOf<String, StreamStatsUi>()
+            val failed = mutableSetOf<String>()
             streams.map { stream ->
                 async {
                     statsSemaphore.withPermit {
@@ -101,6 +103,7 @@ class StreamsViewModel @Inject constructor(
                                     ?: stats.storage?.lifetimeSize,
                             )
                         } else {
+                            failed.add(stream.name)
                             null
                         }
                     }
@@ -108,7 +111,7 @@ class StreamsViewModel @Inject constructor(
             }.awaitAll().filterNotNull().forEach { (name, stats) ->
                 statsMap[name] = stats
             }
-            _state.update { it.copy(streamStats = statsMap) }
+            _state.update { it.copy(streamStats = statsMap, failedStats = failed) }
         }
     }
 

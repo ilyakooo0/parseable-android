@@ -77,6 +77,7 @@ class LogViewerViewModel @Inject constructor(
 
     fun initialize(streamName: String) {
         if (_state.value.streamName == streamName) return
+        stopStreaming()
         _state.update { it.copy(streamName = streamName) }
         loadSchema(streamName)
         refresh()
@@ -228,8 +229,8 @@ class LogViewerViewModel @Inject constructor(
                     }
                 }
                 is ApiResult.Error -> {
-                    // If the CAST(*) search fails, try without the global search
-                    if (current.searchQuery.isNotBlank() && clauses.size == 1) {
+                    // If query failed and we used CAST(*), retry with column-based search
+                    if (current.searchQuery.isNotBlank()) {
                         retryWithSimpleSearch(current, startTime, endTime)
                     } else {
                         _state.update {
@@ -258,11 +259,16 @@ class LogViewerViewModel @Inject constructor(
             return
         }
 
+        // Combine existing filter clauses with the column-based search
+        val retryClauses = current.filterClauses.toMutableList()
+        retryClauses.add("($searchClause)")
+        val filterSql = retryClauses.joinToString(" AND ")
+
         when (val result = repository.queryLogs(
             stream = current.streamName,
             startTime = startTime,
             endTime = endTime,
-            filterSql = searchClause,
+            filterSql = filterSql,
             limit = current.currentLimit,
         )) {
             is ApiResult.Success -> {

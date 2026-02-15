@@ -8,6 +8,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.URLEncoder
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
@@ -16,6 +17,12 @@ import javax.inject.Singleton
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+
+private data class ClientConfig(
+    val baseUrl: String,
+    val authHeader: String,
+    val allowInsecure: Boolean,
+)
 
 @Singleton
 class ParseableApiClient @Inject constructor() {
@@ -30,14 +37,10 @@ class ParseableApiClient @Inject constructor() {
     private val insecureClient: OkHttpClient by lazy { buildClient(allowInsecure = true) }
 
     @Volatile
-    private var baseUrl: String = ""
-    @Volatile
-    private var authHeader: String = ""
-    @Volatile
-    private var allowInsecure: Boolean = false
+    private var config: ClientConfig = ClientConfig("", "", false)
 
     private val client: OkHttpClient
-        get() = if (allowInsecure) insecureClient else secureClient
+        get() = if (config.allowInsecure) insecureClient else secureClient
 
     private fun buildClient(allowInsecure: Boolean): OkHttpClient {
         val builder = OkHttpClient.Builder()
@@ -61,25 +64,30 @@ class ParseableApiClient @Inject constructor() {
         return builder.build()
     }
 
-    fun configure(config: ServerConfig) {
-        val url = config.serverUrl.trimEnd('/')
-        val credentials = "${config.username}:${config.password}"
+    fun configure(serverConfig: ServerConfig) {
+        val url = serverConfig.serverUrl.trimEnd('/')
+        val credentials = "${serverConfig.username}:${serverConfig.password}"
         val auth = "Basic " + android.util.Base64.encodeToString(
             credentials.toByteArray(),
             android.util.Base64.NO_WRAP
         )
-        // Write all volatile fields together; order matters for readers
-        this.allowInsecure = !config.useTls
-        this.authHeader = auth
-        this.baseUrl = url
+        config = ClientConfig(
+            baseUrl = url,
+            authHeader = auth,
+            allowInsecure = !serverConfig.useTls,
+        )
     }
 
-    val isConfigured: Boolean get() = baseUrl.isNotEmpty() && authHeader.isNotEmpty()
+    val isConfigured: Boolean get() = config.baseUrl.isNotEmpty() && config.authHeader.isNotEmpty()
+
+    private fun encodePathSegment(segment: String): String =
+        URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
 
     private fun buildRequest(path: String): Request.Builder {
+        val snapshot = config
         return Request.Builder()
-            .url("$baseUrl$path")
-            .header("Authorization", authHeader)
+            .url("${snapshot.baseUrl}$path")
+            .header("Authorization", snapshot.authHeader)
     }
 
     private suspend fun executeRequest(request: Request): ApiResult<String> =
@@ -164,7 +172,8 @@ class ParseableApiClient @Inject constructor() {
      * GET /api/v1/logstream/{stream}/schema
      */
     suspend fun getStreamSchema(stream: String): ApiResult<StreamSchema> {
-        val request = buildRequest("/api/v1/logstream/$stream/schema").get().build()
+        val encoded = encodePathSegment(stream)
+        val request = buildRequest("/api/v1/logstream/$encoded/schema").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> {
                 try {
@@ -181,7 +190,8 @@ class ParseableApiClient @Inject constructor() {
      * GET /api/v1/logstream/{stream}/stats
      */
     suspend fun getStreamStats(stream: String): ApiResult<StreamStats> {
-        val request = buildRequest("/api/v1/logstream/$stream/stats").get().build()
+        val encoded = encodePathSegment(stream)
+        val request = buildRequest("/api/v1/logstream/$encoded/stats").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> {
                 try {
@@ -198,7 +208,8 @@ class ParseableApiClient @Inject constructor() {
      * GET /api/v1/logstream/{stream}/info
      */
     suspend fun getStreamInfo(stream: String): ApiResult<JsonObject> {
-        val request = buildRequest("/api/v1/logstream/$stream/info").get().build()
+        val encoded = encodePathSegment(stream)
+        val request = buildRequest("/api/v1/logstream/$encoded/info").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> {
                 try {
@@ -215,7 +226,8 @@ class ParseableApiClient @Inject constructor() {
      * GET /api/v1/logstream/{stream}/retention
      */
     suspend fun getStreamRetention(stream: String): ApiResult<List<RetentionConfig>> {
-        val request = buildRequest("/api/v1/logstream/$stream/retention").get().build()
+        val encoded = encodePathSegment(stream)
+        val request = buildRequest("/api/v1/logstream/$encoded/retention").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> {
                 try {
@@ -272,7 +284,8 @@ class ParseableApiClient @Inject constructor() {
      * DELETE /api/v1/logstream/{stream}
      */
     suspend fun deleteStream(stream: String): ApiResult<String> {
-        val request = buildRequest("/api/v1/logstream/$stream").delete().build()
+        val encoded = encodePathSegment(stream)
+        val request = buildRequest("/api/v1/logstream/$encoded").delete().build()
         return executeRequest(request)
     }
 

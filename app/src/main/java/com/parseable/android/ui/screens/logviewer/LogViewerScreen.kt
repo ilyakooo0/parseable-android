@@ -140,7 +140,7 @@ fun LogViewerScreen(
                 value = state.searchQuery,
                 onValueChange = viewModel::onSearchQueryChange,
                 placeholder = { Text("Search logs...") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search") },
                 trailingIcon = {
                     if (state.searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
@@ -205,7 +205,7 @@ fun LogViewerScreen(
                         )
                         Icon(
                             Icons.Filled.FiberManualRecord,
-                            contentDescription = null,
+                            contentDescription = "Live streaming active",
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier
                                 .size(12.dp)
@@ -237,7 +237,7 @@ fun LogViewerScreen(
                     ) {
                         Icon(
                             Icons.Filled.ErrorOutline,
-                            contentDescription = null,
+                            contentDescription = "Streaming error",
                             tint = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.size(16.dp),
                         )
@@ -271,7 +271,7 @@ fun LogViewerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 Icons.Filled.ErrorOutline,
-                                contentDescription = null,
+                                contentDescription = "Error",
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.error,
                             )
@@ -296,7 +296,7 @@ fun LogViewerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 Icons.Filled.SearchOff,
-                                contentDescription = null,
+                                contentDescription = "No results",
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -385,8 +385,9 @@ fun LogViewerScreen(
                         val start = dateRangePickerState.selectedStartDateMillis
                         val end = dateRangePickerState.selectedEndDateMillis
                         if (start != null && end != null) {
-                            // end date should include the full day
-                            viewModel.setCustomTimeRange(start, end + 86_400_000L - 1)
+                            // DateRangePicker returns midnight UTC; set end to 23:59:59.999
+                            val endOfDay = end + (24 * 60 * 60 * 1000L) - 1
+                            viewModel.setCustomTimeRange(start, endOfDay)
                         }
                         showDateRangePicker = false
                     },
@@ -730,7 +731,7 @@ fun SqlQueryBottomSheet(
                     onClick = { onExecute(sql) },
                     enabled = sql.isNotBlank(),
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Execute query")
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Execute")
                 }

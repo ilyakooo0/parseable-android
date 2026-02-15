@@ -58,6 +58,8 @@ class StreamInfoViewModel @Inject constructor(
                     error = listOfNotNull(
                         (statsResult as? ApiResult.Error)?.message,
                         (schemaResult as? ApiResult.Error)?.message,
+                        (retentionResult as? ApiResult.Error)?.message,
+                        (infoResult as? ApiResult.Error)?.message,
                     ).firstOrNull(),
                 )
             }
