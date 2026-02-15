@@ -6,14 +6,13 @@ on:
   push:
     branches: [ master, main ]
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     name: Build & Lint
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-build-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
@@ -64,6 +63,9 @@ jobs:
     needs: build
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
 
