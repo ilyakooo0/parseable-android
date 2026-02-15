@@ -23,9 +23,11 @@ class ParseableRepository @Inject constructor(
         private const val STREAMS_TTL_MS = 30_000L    // 30s
         private const val SCHEMA_TTL_MS = 120_000L    // 2min
         private const val STATS_TTL_MS = 30_000L      // 30s
+        private const val ABOUT_TTL_MS = 300_000L     // 5min
     }
 
     private var streamsCache: CacheEntry<List<LogStream>>? = null
+    private var aboutCache: CacheEntry<AboutInfo>? = null
     private val schemaCache = ConcurrentHashMap<String, CacheEntry<StreamSchema>>()
     private val statsCache = ConcurrentHashMap<String, CacheEntry<StreamStats>>()
 
@@ -38,13 +40,21 @@ class ParseableRepository @Inject constructor(
 
     fun invalidateAll() {
         streamsCache = null
+        aboutCache = null
         schemaCache.clear()
         statsCache.clear()
     }
 
     suspend fun testConnection(): ApiResult<String> = apiClient.checkLiveness()
 
-    suspend fun getAbout(): ApiResult<AboutInfo> = apiClient.getAbout()
+    suspend fun getAbout(): ApiResult<AboutInfo> {
+        aboutCache?.let { if (it.isValid(ABOUT_TTL_MS)) return ApiResult.Success(it.data) }
+        return apiClient.getAbout().also { result ->
+            if (result is ApiResult.Success) {
+                aboutCache = CacheEntry(result.data)
+            }
+        }
+    }
 
     suspend fun listStreams(forceRefresh: Boolean = false): ApiResult<List<LogStream>> {
         if (!forceRefresh) {

@@ -41,15 +41,6 @@ class SettingsViewModel @Inject constructor(
     fun load() {
         viewModelScope.launch {
             val config = settingsRepository.serverConfig.first()
-            if (config != null) {
-                _state.update {
-                    it.copy(
-                        serverUrl = config.serverUrl,
-                        username = config.username,
-                        useTls = config.useTls,
-                    )
-                }
-            }
 
             val aboutDeferred = async { repository.getAbout() }
             val usersDeferred = async { repository.listUsers() }
@@ -57,16 +48,19 @@ class SettingsViewModel @Inject constructor(
             val aboutResult = aboutDeferred.await()
             val usersResult = usersDeferred.await()
 
-            if (aboutResult is ApiResult.Success) {
-                _state.update { it.copy(aboutInfo = aboutResult.data) }
-            }
+            val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
+                obj["id"]?.jsonPrimitive?.content
+                    ?: obj["username"]?.jsonPrimitive?.content
+            } ?: emptyList()
 
-            if (usersResult is ApiResult.Success) {
-                val userNames = usersResult.data.mapNotNull { obj ->
-                    obj["id"]?.jsonPrimitive?.content
-                        ?: obj["username"]?.jsonPrimitive?.content
-                }
-                _state.update { it.copy(users = userNames) }
+            _state.update {
+                it.copy(
+                    serverUrl = config?.serverUrl ?: it.serverUrl,
+                    username = config?.username ?: it.username,
+                    useTls = config?.useTls ?: it.useTls,
+                    aboutInfo = (aboutResult as? ApiResult.Success)?.data ?: it.aboutInfo,
+                    users = userNames.ifEmpty { it.users },
+                )
             }
         }
     }

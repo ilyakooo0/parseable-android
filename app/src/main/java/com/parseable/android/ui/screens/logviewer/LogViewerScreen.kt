@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import android.content.Intent
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +40,7 @@ fun LogViewerScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSqlSheet by remember { mutableStateOf(false) }
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
@@ -94,20 +97,25 @@ fun LogViewerScreen(
                     }
                     IconButton(
                         onClick = {
-                            if (state.logs.isNotEmpty()) {
-                                val json = Json { prettyPrint = true }
-                                val text = state.logs.joinToString("\n") {
-                                    json.encodeToString(JsonObject.serializer(), it)
+                            val logs = state.logs
+                            if (logs.isNotEmpty()) {
+                                scope.launch {
+                                    val text = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                        val json = Json { prettyPrint = true }
+                                        logs.joinToString("\n") {
+                                            json.encodeToString(JsonObject.serializer(), it)
+                                        }
+                                    }
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, text)
+                                        putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(
+                                        Intent.createChooser(sendIntent, "Share logs")
+                                    )
                                 }
-                                val sendIntent = Intent().apply {
-                                    action = Intent.ACTION_SEND
-                                    putExtra(Intent.EXTRA_TEXT, text)
-                                    putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
-                                    type = "text/plain"
-                                }
-                                context.startActivity(
-                                    Intent.createChooser(sendIntent, "Share logs")
-                                )
                             }
                         },
                         enabled = state.logs.isNotEmpty(),
