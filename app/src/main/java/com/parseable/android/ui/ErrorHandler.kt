@@ -1,8 +1,8 @@
 package com.parseable.android.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -71,11 +71,10 @@ fun GlobalErrorBoundary(
                     Snackbar(snackbarData = data)
                 }
             },
-        ) { innerPadding ->
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        ) { _ ->
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 content()
             }
