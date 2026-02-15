@@ -69,7 +69,7 @@ class LogViewerViewModel @Inject constructor(
 
     companion object {
         private const val STREAMING_INTERVAL_MS = 3000L
-        private const val STREAMING_MAX_LOGS = 5000
+        private const val STREAMING_MAX_LOGS = 1000
 
         /** Escape single quotes in user input to prevent SQL injection. */
         fun escapeSql(value: String): String = value.replace("'", "''")

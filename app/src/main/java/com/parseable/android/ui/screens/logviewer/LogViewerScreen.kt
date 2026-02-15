@@ -317,16 +317,15 @@ fun LogViewerScreen(
                     ) {
                         itemsIndexed(
                             state.logs,
-                            key = { index, log -> stableLogKey(index, log) },
-                        ) { index, logEntry ->
-                            val key = stableLogKey(index, logEntry)
+                            key = { _, log -> stableLogKey(log) },
+                        ) { _, logEntry ->
+                            val key = stableLogKey(logEntry)
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
                                 onClick = {
                                     expandedLogKey = if (expandedLogKey == key) null else key
                                 },
-                                columns = state.columns,
                             )
                         }
 
@@ -471,7 +470,6 @@ fun LogEntryCard(
     logEntry: JsonObject,
     isExpanded: Boolean,
     onClick: () -> Unit,
-    columns: List<String>,
 ) {
     Card(
         onClick = onClick,
@@ -498,10 +496,12 @@ fun LogEntryCard(
 
             if (!isExpanded) {
                 // Compact view: show first meaningful fields
-                val preview = logEntry.entries
-                    .filter { !it.key.startsWith("p_") || it.key == "p_timestamp" }
-                    .take(3)
-                    .joinToString(" | ") { "${it.key}: ${formatJsonValue(it.value)}" }
+                val preview = remember(logEntry) {
+                    logEntry.entries
+                        .filter { !it.key.startsWith("p_") || it.key == "p_timestamp" }
+                        .take(3)
+                        .joinToString(" | ") { "${it.key}: ${formatJsonValue(it.value)}" }
+                }
                 Text(
                     text = preview.ifEmpty { logEntry.toString() },
                     style = MaterialTheme.typography.bodySmall,
@@ -545,10 +545,10 @@ fun LogEntryCard(
  * (e.g., new logs prepended during streaming). Uses p_timestamp + p_metadata to form a
  * content-based identity, falling back to a hash of the entire entry.
  */
-private fun stableLogKey(index: Int, log: JsonObject): String {
+private fun stableLogKey(log: JsonObject): String {
     val ts = log["p_timestamp"]?.toString()
     val meta = log["p_metadata"]?.toString()
-    return if (ts != null) "$ts|${meta ?: index}" else "idx-$index-${log.hashCode()}"
+    return if (ts != null) "$ts|${meta.orEmpty()}" else log.hashCode().toString()
 }
 
 private fun formatJsonValue(element: JsonElement): String {
