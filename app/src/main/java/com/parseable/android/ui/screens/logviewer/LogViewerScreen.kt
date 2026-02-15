@@ -56,6 +56,8 @@ fun LogViewerScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSqlSheet by remember { mutableStateOf(false) }
+    var showSavedFiltersSheet by remember { mutableStateOf(false) }
+    var showSaveFilterDialog by remember { mutableStateOf(false) }
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showShareWarning by remember { mutableStateOf(false) }
@@ -109,6 +111,12 @@ fun LogViewerScreen(
                     }
                     IconButton(onClick = { showSqlSheet = true }) {
                         Icon(Icons.Filled.Code, contentDescription = "SQL Query")
+                    }
+                    IconButton(onClick = {
+                        viewModel.loadSavedFilters()
+                        showSavedFiltersSheet = true
+                    }) {
+                        Icon(Icons.Filled.BookmarkBorder, contentDescription = "Saved Filters")
                     }
                     IconButton(
                         onClick = { showShareWarning = true },
@@ -585,6 +593,37 @@ fun LogViewerScreen(
             )
         }
     }
+
+    // Saved filters bottom sheet
+    if (showSavedFiltersSheet) {
+        SavedFiltersBottomSheet(
+            savedFiltersState = state.savedFilters,
+            hasActiveFilters = state.activeFilters.isNotEmpty() ||
+                state.searchQuery.isNotBlank() ||
+                state.customSql.isNotBlank(),
+            onDismiss = { showSavedFiltersSheet = false },
+            onSaveCurrentFilter = { showSaveFilterDialog = true },
+            onApplyFilter = { filter ->
+                viewModel.applySavedFilter(filter)
+                showSavedFiltersSheet = false
+            },
+            onDeleteFilter = { filterId -> viewModel.deleteSavedFilter(filterId) },
+            onRetry = { viewModel.loadSavedFilters() },
+        )
+    }
+
+    // Save filter name dialog
+    if (showSaveFilterDialog) {
+        SaveFilterDialog(
+            isSaving = state.savedFilters.isSaving,
+            onDismiss = { showSaveFilterDialog = false },
+            onSave = { name ->
+                viewModel.saveCurrentFilter(name)
+                showSaveFilterDialog = false
+                showSavedFiltersSheet = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -1000,4 +1039,243 @@ fun SqlQueryBottomSheet(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SavedFiltersBottomSheet(
+    savedFiltersState: SavedFiltersState,
+    hasActiveFilters: Boolean,
+    onDismiss: () -> Unit,
+    onSaveCurrentFilter: () -> Unit,
+    onApplyFilter: (com.parseable.android.data.model.SavedFilter) -> Unit,
+    onDeleteFilter: (String) -> Unit,
+    onRetry: () -> Unit,
+) {
+    var filterToDelete by remember { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Saved Filters",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (hasActiveFilters) {
+                    FilledTonalButton(onClick = onSaveCurrentFilter) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Save Current")
+                    }
+                }
+            }
+
+            when {
+                savedFiltersState.isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                savedFiltersState.error != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = savedFiltersState.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(onClick = onRetry) {
+                            Text("Retry")
+                        }
+                    }
+                }
+                savedFiltersState.filters.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Filled.BookmarkBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "No saved filters for this stream",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (hasActiveFilters) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Use \"Save Current\" to save your active filters",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    savedFiltersState.filters.forEach { filter ->
+                        Card(
+                            onClick = { onApplyFilter(filter) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Filled.Bookmark,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = filter.filterName,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    val description = when (filter.query.filterType) {
+                                        "sql" -> filter.query.filterQuery?.take(60) ?: "SQL query"
+                                        "search" -> "Search: ${filter.query.filterQuery ?: ""}"
+                                        else -> {
+                                            val ruleCount = filter.query.filterBuilder?.rules
+                                                ?.sumOf { it.rules.size } ?: 0
+                                            if (ruleCount > 0) "$ruleCount filter rule(s)" else "No rules"
+                                        }
+                                    }
+                                    Text(
+                                        text = description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    filterToDelete = filter.filterId
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = "Delete filter",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    // Delete confirmation dialog
+    if (filterToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { filterToDelete = null },
+            title = { Text("Delete Filter") },
+            text = { Text("Are you sure you want to delete this saved filter? This will remove it from the server.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    filterToDelete?.let { onDeleteFilter(it) }
+                    filterToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { filterToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+fun SaveFilterDialog(
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var filterName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save Filter") },
+        text = {
+            Column {
+                Text(
+                    text = "Save your current filters to the Parseable server. You can load them later on any device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = filterName,
+                    onValueChange = { filterName = it },
+                    label = { Text("Filter name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving,
+                )
+            }
+        },
+        confirmButton = {
+            if (isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .padding(end = 8.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                TextButton(
+                    onClick = { onSave(filterName.trim()) },
+                    enabled = filterName.isNotBlank(),
+                ) {
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text("Cancel")
+            }
+        },
+    )
 }

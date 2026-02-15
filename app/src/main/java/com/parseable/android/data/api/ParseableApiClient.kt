@@ -377,4 +377,75 @@ class ParseableApiClient @Inject constructor() {
             is ApiResult.Error -> result
         }
     }
+
+    /**
+     * GET /api/v1/filters - list saved filters for the authenticated user
+     */
+    suspend fun listFilters(): ApiResult<List<SavedFilter>> {
+        val request = buildRequest("/api/v1/filters").get().build()
+        return when (val result = executeRequest(request)) {
+            is ApiResult.Success -> parseResponse(result.data, "filters") {
+                json.decodeFromString<List<SavedFilter>>(result.data)
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * GET /api/v1/filters/{filterId} - get a specific saved filter
+     */
+    suspend fun getFilter(filterId: String): ApiResult<SavedFilter> {
+        val encoded = encodePathSegment(filterId)
+        val request = buildRequest("/api/v1/filters/$encoded").get().build()
+        return when (val result = executeRequest(request)) {
+            is ApiResult.Success -> parseResponse(result.data, "filter") {
+                json.decodeFromString<SavedFilter>(result.data)
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * POST /api/v1/filters - create a new saved filter
+     */
+    suspend fun createFilter(filter: SavedFilter): ApiResult<SavedFilter> {
+        val requestBody = json.encodeToString(SavedFilter.serializer(), filter)
+            .toRequestBody("application/json".toMediaType())
+        val request = buildRequest("/api/v1/filters")
+            .post(requestBody)
+            .build()
+        return when (val result = executeRequest(request)) {
+            is ApiResult.Success -> parseResponse(result.data, "filter") {
+                json.decodeFromString<SavedFilter>(result.data)
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * PUT /api/v1/filters/{filterId} - update an existing saved filter
+     */
+    suspend fun updateFilter(filterId: String, filter: SavedFilter): ApiResult<SavedFilter> {
+        val encoded = encodePathSegment(filterId)
+        val requestBody = json.encodeToString(SavedFilter.serializer(), filter)
+            .toRequestBody("application/json".toMediaType())
+        val request = buildRequest("/api/v1/filters/$encoded")
+            .put(requestBody)
+            .build()
+        return when (val result = executeRequest(request)) {
+            is ApiResult.Success -> parseResponse(result.data, "filter") {
+                json.decodeFromString<SavedFilter>(result.data)
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * DELETE /api/v1/filters/{filterId} - delete a saved filter
+     */
+    suspend fun deleteFilter(filterId: String): ApiResult<String> {
+        val encoded = encodePathSegment(filterId)
+        val request = buildRequest("/api/v1/filters/$encoded").delete().build()
+        return executeRequest(request)
+    }
 }

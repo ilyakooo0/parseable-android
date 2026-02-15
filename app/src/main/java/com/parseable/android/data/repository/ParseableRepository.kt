@@ -162,4 +162,18 @@ class ParseableRepository @Inject constructor(
         checkAuth(apiClient.createAlert(alert))
 
     suspend fun listUsers(): ApiResult<List<JsonObject>> = checkAuth(apiClient.listUsers())
+
+    suspend fun listFilters(): ApiResult<List<SavedFilter>> = checkAuth(apiClient.listFilters())
+
+    suspend fun getFilter(filterId: String): ApiResult<SavedFilter> =
+        checkAuth(apiClient.getFilter(filterId))
+
+    suspend fun createFilter(filter: SavedFilter): ApiResult<SavedFilter> =
+        checkAuth(apiClient.createFilter(filter))
+
+    suspend fun updateFilter(filterId: String, filter: SavedFilter): ApiResult<SavedFilter> =
+        checkAuth(apiClient.updateFilter(filterId, filter))
+
+    suspend fun deleteFilter(filterId: String): ApiResult<String> =
+        checkAuth(apiClient.deleteFilter(filterId))
 }
