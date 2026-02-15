@@ -213,7 +213,7 @@ class LogViewerViewModel @Inject constructor(
             _state.update { it.copy(error = "Only SELECT queries are allowed") }
             return
         }
-        _state.update { it.copy(filters = it.filters.copy(customSql = sql)) }
+        _state.update { it.copy(filters = it.filters.copy(customSql = sql), currentLimit = 500) }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
@@ -249,12 +249,13 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun refresh() {
-        val current = _state.value
-        if (current.streamName.isEmpty()) return
+        if (_state.value.streamName.isEmpty()) return
 
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
+            // Snapshot state inside the coroutine so we always see the latest filters/columns
+            val current = _state.value
             val (startTime, endTime) = getTimeRange()
 
             // Build WHERE clause from filters + search

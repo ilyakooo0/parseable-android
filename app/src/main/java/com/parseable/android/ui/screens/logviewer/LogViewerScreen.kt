@@ -59,7 +59,6 @@ fun LogViewerScreen(
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showShareWarning by remember { mutableStateOf(false) }
-    val dateRangePickerState = rememberDateRangePickerState()
 
     LaunchedEffect(streamName) {
         viewModel.initialize(streamName)
@@ -349,6 +348,11 @@ fun LogViewerScreen(
                         }
                     }
 
+                    // Pre-compute stable keys so each log is assigned exactly one key
+                    val logKeys = remember(state.logs) {
+                        state.logs.map { stableLogKey(it) }
+                    }
+
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(8.dp),
@@ -356,9 +360,9 @@ fun LogViewerScreen(
                     ) {
                         itemsIndexed(
                             state.logs,
-                            key = { _, log -> stableLogKey(log) },
-                        ) { _, logEntry ->
-                            val key = remember(logEntry) { stableLogKey(logEntry) }
+                            key = { index, _ -> logKeys[index] },
+                        ) { index, logEntry ->
+                            val key = logKeys[index]
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
@@ -464,8 +468,10 @@ fun LogViewerScreen(
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                                     val file = java.io.File(dir, "logs_$safeFileName.json")
                                     file.bufferedWriter().use { writer ->
+                                        // Use compact JSON for large exports to reduce memory/file size
+                                        val encoder = if (logs.size > 1000) Json else prettyJson
                                         logs.forEachIndexed { index, log ->
-                                            writer.write(prettyJson.encodeToString(JsonObject.serializer(), log))
+                                            writer.write(encoder.encodeToString(JsonObject.serializer(), log))
                                             if (index < logs.lastIndex) writer.newLine()
                                         }
                                     }
@@ -506,8 +512,10 @@ fun LogViewerScreen(
         )
     }
 
-    // Custom date range picker
+    // Custom date range picker – state is created inside the block so it
+    // resets every time the dialog reopens (no stale selection carried over).
     if (showDateRangePicker) {
+        val dateRangePickerState = rememberDateRangePickerState()
         DatePickerDialog(
             onDismissRequest = { showDateRangePicker = false },
             confirmButton = {

@@ -38,7 +38,7 @@ jobs:
         run: ./gradlew assembleRelease
 
       - name: Run unit tests
-        run: ./gradlew testReleaseUnitTest
+        run: ./gradlew testReleaseUnitTest testDebugUnitTest
 
       - name: Run Android Lint
         run: ./gradlew lintRelease
