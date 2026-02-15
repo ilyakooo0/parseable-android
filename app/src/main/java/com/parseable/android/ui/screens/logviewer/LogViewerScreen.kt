@@ -40,7 +40,7 @@ fun LogViewerScreen(
     val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSqlSheet by remember { mutableStateOf(false) }
-    var expandedLogIndex by remember { mutableIntStateOf(-1) }
+    var expandedLogKey by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(streamName) {
@@ -317,13 +317,14 @@ fun LogViewerScreen(
                     ) {
                         itemsIndexed(
                             state.logs,
-                            key = { index, _ -> index },
+                            key = { index, log -> stableLogKey(index, log) },
                         ) { index, logEntry ->
+                            val key = stableLogKey(index, logEntry)
                             LogEntryCard(
                                 logEntry = logEntry,
-                                isExpanded = expandedLogIndex == index,
+                                isExpanded = expandedLogKey == key,
                                 onClick = {
-                                    expandedLogIndex = if (expandedLogIndex == index) -1 else index
+                                    expandedLogKey = if (expandedLogKey == key) null else key
                                 },
                                 columns = state.columns,
                             )
@@ -537,6 +538,17 @@ fun LogEntryCard(
             }
         }
     }
+}
+
+/**
+ * Produces a stable key for a log entry so that expanded state survives list mutations
+ * (e.g., new logs prepended during streaming). Uses p_timestamp + p_metadata to form a
+ * content-based identity, falling back to a hash of the entire entry.
+ */
+private fun stableLogKey(index: Int, log: JsonObject): String {
+    val ts = log["p_timestamp"]?.toString()
+    val meta = log["p_metadata"]?.toString()
+    return if (ts != null) "$ts|${meta ?: index}" else "idx-$index-${log.hashCode()}"
 }
 
 private fun formatJsonValue(element: JsonElement): String {

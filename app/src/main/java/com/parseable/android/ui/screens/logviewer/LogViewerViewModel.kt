@@ -373,8 +373,12 @@ class LogViewerViewModel @Inject constructor(
                 val newLogs = result.data
                 if (newLogs.isNotEmpty()) {
                     // Update the last seen timestamp to the most recent log
-                    val newestTimestamp = newLogs.firstOrNull()
-                        ?.get("p_timestamp")?.jsonPrimitive?.content
+                    val newestTimestamp = try {
+                        newLogs.firstOrNull()
+                            ?.get("p_timestamp")?.jsonPrimitive?.content
+                    } catch (_: IllegalArgumentException) {
+                        null
+                    }
                     if (newestTimestamp != null) {
                         lastSeenTimestamp = newestTimestamp
                     }

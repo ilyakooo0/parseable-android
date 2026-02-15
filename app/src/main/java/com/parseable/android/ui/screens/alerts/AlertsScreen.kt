@@ -78,7 +78,7 @@ fun AlertsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.alerts) { alert ->
+                items(state.alerts, key = { it.id ?: it.name ?: it.hashCode() }) { alert ->
                     AlertCard(alert)
                 }
             }
