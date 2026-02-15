@@ -120,7 +120,8 @@ class LoginViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, error = null) }
 
         var url = current.serverUrl.trim()
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        val urlLower = url.lowercase()
+        if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
             url = if (current.allowInsecure) "http://$url" else "https://$url"
         }
 
@@ -144,25 +145,28 @@ class LoginViewModel @Inject constructor(
             serverUrl = url,
             username = current.username.trim(),
             password = password,
-            useTls = url.startsWith("https"),
+            useTls = url.lowercase().startsWith("https"),
         )
 
         repository.configure(config)
 
         when (val result = repository.testConnection()) {
             is ApiResult.Success -> {
-                // Verify this is actually a Parseable server by fetching /about
-                when (val aboutResult = repository.getAbout()) {
+                // Verify this is actually a Parseable server and credentials are valid.
+                // Uses verifyServer() to avoid triggering the global auth-error handler.
+                when (val aboutResult = repository.verifyServer()) {
                     is ApiResult.Success -> {
                         settingsRepository.saveServerConfig(config)
                         _state.update { it.copy(isLoading = false, loginSuccess = true, password = "") }
                     }
                     is ApiResult.Error -> {
+                        val errorMsg = if (aboutResult.isUnauthorized) {
+                            "Invalid credentials. Check your username and password."
+                        } else {
+                            "Server responded but doesn't appear to be Parseable: ${aboutResult.userMessage}"
+                        }
                         _state.update {
-                            it.copy(
-                                isLoading = false,
-                                error = "Server responded but doesn't appear to be Parseable: ${aboutResult.userMessage}",
-                            )
+                            it.copy(isLoading = false, error = errorMsg)
                         }
                     }
                 }
