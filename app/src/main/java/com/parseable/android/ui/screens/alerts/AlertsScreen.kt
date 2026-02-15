@@ -98,7 +98,7 @@ fun AlertsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.alerts, key = { it.id ?: it.name ?: it.hashCode() }) { alert ->
+                    items(state.alerts, key = { it.id ?: it.name ?: "alert_${state.alerts.indexOf(it)}" }) { alert ->
                         AlertCard(
                             alert = alert,
                             onDelete = { viewModel.requestDelete(alert) },

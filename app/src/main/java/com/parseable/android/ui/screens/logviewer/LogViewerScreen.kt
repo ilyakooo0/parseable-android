@@ -654,8 +654,7 @@ fun LogEntryCard(
                     }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                val entries = remember(logEntry) { logEntry.entries.toList() }
-                entries.forEach { (key, value) ->
+                logEntry.entries.forEach { (key, value) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -690,7 +689,7 @@ fun LogEntryCard(
 private fun stableLogKey(log: JsonObject): String {
     val ts = log["p_timestamp"]?.toString()
     val meta = log["p_metadata"]?.toString()
-    return if (ts != null) "$ts|${meta.orEmpty()}" else log.hashCode().toString()
+    return if (ts != null) "$ts|${meta.orEmpty()}" else log.toString()
 }
 
 private fun formatJsonValue(element: JsonElement): String {

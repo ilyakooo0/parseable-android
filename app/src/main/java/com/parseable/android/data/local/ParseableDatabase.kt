@@ -6,7 +6,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [FavoriteStream::class],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class ParseableDatabase : RoomDatabase() {
     abstract fun favoriteStreamDao(): FavoriteStreamDao

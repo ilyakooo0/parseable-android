@@ -158,7 +158,7 @@ fun StreamInfoScreen(
             icon = {
                 Icon(
                     Icons.Filled.Warning,
-                    contentDescription = null,
+                    contentDescription = "Warning",
                     tint = MaterialTheme.colorScheme.error,
                 )
             },
