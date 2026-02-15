@@ -34,18 +34,18 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
+      - name: Build release APK
+        run: ./gradlew assembleRelease
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew testReleaseUnitTest
 
-      - name: Upload debug APK
+      - name: Upload release APK
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: parseable-android-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: parseable-android-release
+          path: app/build/outputs/apk/release/*.apk
           retention-days: 14
 
   lint:
@@ -72,12 +72,12 @@ jobs:
         run: gradle wrapper --gradle-version 8.9
 
       - name: Run Android Lint
-        run: ./gradlew lintDebug
+        run: ./gradlew lintRelease
 
       - name: Upload lint results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-results
-          path: app/build/reports/lint-results-debug.html
+          path: app/build/reports/lint-results-release.html
           retention-days: 14
