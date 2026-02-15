@@ -73,7 +73,7 @@ fun StreamsScreen(
                         Text("Parseable", fontWeight = FontWeight.Bold)
                         if (state.aboutInfo != null) {
                             Text(
-                                text = "v${state.aboutInfo?.version ?: "?"} - ${state.aboutInfo?.mode ?: ""}",
+                                text = "${state.aboutInfo?.version ?: "?"} - ${state.aboutInfo?.mode ?: ""}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
