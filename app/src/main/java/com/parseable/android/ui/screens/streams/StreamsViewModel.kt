@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.local.FavoriteStream
 import com.parseable.android.data.local.FavoriteStreamDao
+import com.parseable.android.data.formatBytes
 import com.parseable.android.data.model.AboutInfo
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.model.LogStream
@@ -153,10 +154,10 @@ class StreamsViewModel @Inject constructor(
                 val ui = StreamStatsUi(
                     eventCount = stats.ingestion?.count
                         ?: stats.ingestion?.lifetimeCount,
-                    ingestionSize = stats.ingestion?.size
-                        ?: stats.ingestion?.lifetimeSize,
-                    storageSize = stats.storage?.size
-                        ?: stats.storage?.lifetimeSize,
+                    ingestionSize = formatBytes(stats.ingestion?.size)
+                        ?: formatBytes(stats.ingestion?.lifetimeSize),
+                    storageSize = formatBytes(stats.storage?.size)
+                        ?: formatBytes(stats.storage?.lifetimeSize),
                 )
                 _state.update {
                     it.copy(
