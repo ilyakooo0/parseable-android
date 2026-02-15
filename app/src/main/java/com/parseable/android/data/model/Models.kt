@@ -107,7 +107,7 @@ data class AboutInfo(
     val commit: String? = null,
     @SerialName("deploymentId")
     val deploymentId: String? = null,
-    val license: String? = null,
+    val license: JsonObject? = null,
     val mode: String? = null,
     val staging: String? = null,
     val store: JsonObject? = null,
