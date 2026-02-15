@@ -11,9 +11,11 @@ import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -46,6 +48,9 @@ class StreamsViewModel @Inject constructor(
     private val _state = MutableStateFlow(StreamsState())
     val state: StateFlow<StreamsState> = _state.asStateFlow()
 
+    private val _snackbarEvent = Channel<String>(Channel.BUFFERED)
+    val snackbarEvent = _snackbarEvent.receiveAsFlow()
+
     init {
         viewModelScope.launch {
             favoriteDao.getAllNames().collect { names ->
@@ -58,8 +63,10 @@ class StreamsViewModel @Inject constructor(
         viewModelScope.launch {
             if (streamName in _state.value.favoriteNames) {
                 favoriteDao.deleteByName(streamName)
+                _snackbarEvent.send("Removed from favorites")
             } else {
                 favoriteDao.insert(FavoriteStream(streamName = streamName))
+                _snackbarEvent.send("Added to favorites")
             }
         }
     }
@@ -108,27 +115,43 @@ class StreamsViewModel @Inject constructor(
         streams.forEach { stream ->
             viewModelScope.launch {
                 statsSemaphore.withPermit {
-                    when (val result = repository.getStreamStats(stream.name)) {
-                        is ApiResult.Success -> {
-                            val stats = result.data
-                            val ui = StreamStatsUi(
-                                eventCount = stats.ingestion?.count
-                                    ?: stats.ingestion?.lifetimeCount,
-                                ingestionSize = stats.ingestion?.size
-                                    ?: stats.ingestion?.lifetimeSize,
-                                storageSize = stats.storage?.size
-                                    ?: stats.storage?.lifetimeSize,
-                            )
-                            _state.update {
-                                it.copy(streamStats = it.streamStats + (stream.name to ui))
-                            }
-                        }
-                        is ApiResult.Error -> {
-                            _state.update {
-                                it.copy(failedStats = it.failedStats + stream.name)
-                            }
-                        }
-                    }
+                    loadSingleStreamStats(stream.name)
+                }
+            }
+        }
+    }
+
+    fun retryStats(streamName: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(failedStats = it.failedStats - streamName) }
+            statsSemaphore.withPermit {
+                loadSingleStreamStats(streamName)
+            }
+        }
+    }
+
+    private suspend fun loadSingleStreamStats(streamName: String) {
+        when (val result = repository.getStreamStats(streamName)) {
+            is ApiResult.Success -> {
+                val stats = result.data
+                val ui = StreamStatsUi(
+                    eventCount = stats.ingestion?.count
+                        ?: stats.ingestion?.lifetimeCount,
+                    ingestionSize = stats.ingestion?.size
+                        ?: stats.ingestion?.lifetimeSize,
+                    storageSize = stats.storage?.size
+                        ?: stats.storage?.lifetimeSize,
+                )
+                _state.update {
+                    it.copy(
+                        streamStats = it.streamStats + (streamName to ui),
+                        failedStats = it.failedStats - streamName,
+                    )
+                }
+            }
+            is ApiResult.Error -> {
+                _state.update {
+                    it.copy(failedStats = it.failedStats + streamName)
                 }
             }
         }

@@ -1,6 +1,6 @@
 package com.parseable.android.data.api
 
-import android.util.Log
+import timber.log.Timber
 import com.parseable.android.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -117,7 +117,7 @@ class ParseableApiClient @Inject constructor() {
             } catch (e: IOException) {
                 ApiResult.Error(message = e.message ?: "Network error")
             } catch (e: Exception) {
-                Log.e("ParseableApiClient", "Unexpected error", e)
+                Timber.e(e, "Unexpected error")
                 ApiResult.Error(message = "Unexpected error: ${e.javaClass.simpleName}")
             }
         }
@@ -300,7 +300,14 @@ class ParseableApiClient @Inject constructor() {
                     is JsonObject -> element["alerts"]?.jsonArray ?: JsonArray(emptyList())
                     else -> JsonArray(emptyList())
                 }
-                alertsArray.map { json.decodeFromJsonElement<Alert>(it) }
+                alertsArray.mapNotNull { alertElement ->
+                    try {
+                        json.decodeFromJsonElement<Alert>(alertElement)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Skipping malformed alert entry")
+                        null
+                    }
+                }
             }
             is ApiResult.Error -> result
         }

@@ -18,6 +18,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +32,7 @@ fun StreamsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {
         val filtered = if (searchQuery.isBlank()) {
@@ -49,7 +51,17 @@ fun StreamsScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.snackbarEvent.collectLatest { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -166,6 +178,7 @@ fun StreamsScreen(
                                 statsFailed = stream.name in state.failedStats,
                                 isFavorite = isFavorite,
                                 onToggleFavorite = { viewModel.toggleFavorite(stream.name) },
+                                onRetryStats = { viewModel.retryStats(stream.name) },
                                 onClick = { onStreamClick(stream.name) },
                             )
                         }
@@ -223,6 +236,7 @@ private fun StreamCard(
     statsFailed: Boolean = false,
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
+    onRetryStats: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     Card(
@@ -291,11 +305,23 @@ private fun StreamCard(
                 }
             } else if (statsFailed) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Stats unavailable",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = "Stats unavailable",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(
+                        onClick = onRetryStats,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("Retry", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }

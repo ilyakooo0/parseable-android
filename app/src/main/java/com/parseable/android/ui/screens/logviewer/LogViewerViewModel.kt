@@ -39,12 +39,14 @@ data class FilterState(
     val activeFilters: List<String> = emptyList(),
     val filterClauses: List<String> = emptyList(),
     val customSql: String = "",
+    val isSearching: Boolean = false,
 )
 
 data class StreamingState(
     val isStreaming: Boolean = false,
     val streamingNewCount: Int = 0,
     val streamingError: String? = null,
+    val currentIntervalMs: Long = 3000L,
 )
 
 data class LogViewerState(
@@ -69,6 +71,8 @@ data class LogViewerState(
     val isStreaming: Boolean get() = streaming.isStreaming
     val streamingNewCount: Int get() = streaming.streamingNewCount
     val streamingError: String? get() = streaming.streamingError
+    val currentIntervalMs: Long get() = streaming.currentIntervalMs
+    val isSearching: Boolean get() = filters.isSearching
 }
 
 @HiltViewModel
@@ -143,10 +147,11 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun onSearchQueryChange(query: String) {
-        _state.update { it.copy(filters = it.filters.copy(searchQuery = query)) }
+        _state.update { it.copy(filters = it.filters.copy(searchQuery = query, isSearching = query.isNotBlank())) }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300)
+            _state.update { it.copy(filters = it.filters.copy(isSearching = false)) }
             refresh()
         }
     }
@@ -342,6 +347,9 @@ class LogViewerViewModel @Inject constructor(
                         .coerceAtMost(STREAMING_MAX_INTERVAL_MS)
                 } else {
                     STREAMING_BASE_INTERVAL_MS
+                }
+                _state.update {
+                    it.copy(streaming = it.streaming.copy(currentIntervalMs = intervalMs))
                 }
                 delay(intervalMs)
             }

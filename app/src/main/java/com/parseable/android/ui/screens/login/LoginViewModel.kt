@@ -120,7 +120,9 @@ class LoginViewModel @Inject constructor(
                 url = if (current.allowInsecure) "http://$url" else "https://$url"
             }
 
-            if (!Patterns.WEB_URL.matcher(url).matches()) {
+            val host = url.removePrefix("http://").removePrefix("https://")
+                .substringBefore("/").substringBefore(":")
+            if (!Patterns.WEB_URL.matcher(url).matches() || host.isBlank() || host.contains(" ")) {
                 _state.update {
                     it.copy(
                         isLoading = false,
