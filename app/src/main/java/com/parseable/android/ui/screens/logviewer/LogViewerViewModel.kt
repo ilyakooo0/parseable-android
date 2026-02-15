@@ -123,7 +123,7 @@ class LogViewerViewModel @Inject constructor(
         schemaJob = viewModelScope.launch {
             when (val result = repository.getStreamSchema(streamName)) {
                 is ApiResult.Success -> {
-                    val columns = result.data.fields.map { it.name }
+                    val columns = result.data.fields.map { it.name }.sorted()
                     _state.update { it.copy(columns = columns) }
                 }
                 is ApiResult.Error -> { /* Schema loading failure is non-fatal */ }
@@ -486,7 +486,9 @@ class LogViewerViewModel @Inject constructor(
             _state.update { it.copy(savedFilters = it.savedFilters.copy(isLoading = true, error = null)) }
             when (val result = repository.listFilters()) {
                 is ApiResult.Success -> {
-                    val streamFilters = result.data.filter { it.streamName == _state.value.streamName }
+                    val streamFilters = result.data
+                        .filter { it.streamName == _state.value.streamName }
+                        .sortedBy { it.filterName.lowercase() }
                     _state.update {
                         it.copy(savedFilters = it.savedFilters.copy(filters = streamFilters, isLoading = false))
                     }

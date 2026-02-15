@@ -12,7 +12,7 @@ interface FavoriteStreamDao {
     @Query("SELECT * FROM favorite_streams ORDER BY addedAt DESC")
     fun getAll(): Flow<List<FavoriteStream>>
 
-    @Query("SELECT streamName FROM favorite_streams")
+    @Query("SELECT streamName FROM favorite_streams ORDER BY addedAt DESC")
     fun getAllNames(): Flow<List<String>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

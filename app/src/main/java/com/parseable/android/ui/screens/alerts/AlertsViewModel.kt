@@ -33,7 +33,10 @@ class AlertsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, error = null) }
             when (val result = repository.listAlerts()) {
                 is ApiResult.Success -> {
-                    _state.update { it.copy(alerts = result.data, isLoading = false) }
+                    val sorted = result.data.sortedBy { a ->
+                        (a.name ?: a.title ?: "").lowercase()
+                    }
+                    _state.update { it.copy(alerts = sorted, isLoading = false) }
                 }
                 is ApiResult.Error -> {
                     _state.update { it.copy(isLoading = false, error = result.userMessage) }
