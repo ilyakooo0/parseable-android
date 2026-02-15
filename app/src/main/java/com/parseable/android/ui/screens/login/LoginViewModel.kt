@@ -6,7 +6,6 @@ import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.model.ServerConfig
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
-import android.util.Patterns
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -125,9 +124,13 @@ class LoginViewModel @Inject constructor(
             url = if (current.allowInsecure) "http://$url" else "https://$url"
         }
 
-        val host = url.removePrefix("http://").removePrefix("https://")
-            .substringBefore("/").substringBefore(":")
-        if (!Patterns.WEB_URL.matcher(url).matches() || host.isBlank() || host.contains(" ")) {
+        val isValidUrl = try {
+            val uri = java.net.URI(url)
+            uri.scheme != null && !uri.host.isNullOrBlank() && !uri.host!!.contains(" ")
+        } catch (_: Exception) {
+            false
+        }
+        if (!isValidUrl) {
             _state.update {
                 it.copy(
                     isLoading = false,
