@@ -2,6 +2,7 @@ package com.parseable.android.ui.screens.logviewer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parseable.android.data.escapeIdentifier
 import com.parseable.android.data.escapeSql
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
@@ -205,8 +206,21 @@ class LogViewerViewModel @Inject constructor(
             val clauses = current.filterClauses.toMutableList()
             if (current.searchQuery.isNotBlank()) {
                 val safeSearch = escapeSql(current.searchQuery)
-                // Search across all text columns
-                clauses.add("CAST(* AS TEXT) ILIKE '%$safeSearch%'")
+                // Search across non-internal columns by name
+                val searchFields = current.columns
+                    .filter { !it.startsWith("p_") }
+                    .take(5)
+                if (searchFields.isNotEmpty()) {
+                    val searchClause = searchFields.joinToString(" OR ") {
+                        "\"$it\" ILIKE '%$safeSearch%'"
+                    }
+                    clauses.add("($searchClause)")
+                } else {
+                    _state.update {
+                        it.copy(isLoading = false, error = "Search unavailable: stream schema not loaded")
+                    }
+                    return@launch
+                }
             }
 
             val filterSql = clauses.joinToString(" AND ")
@@ -228,61 +242,9 @@ class LogViewerViewModel @Inject constructor(
                     }
                 }
                 is ApiResult.Error -> {
-                    // If query failed and we used CAST(*), retry with column-based search
-                    if (current.searchQuery.isNotBlank()) {
-                        retryWithSimpleSearch(current, startTime, endTime)
-                    } else {
-                        _state.update {
-                            it.copy(isLoading = false, error = result.userMessage)
-                        }
+                    _state.update {
+                        it.copy(isLoading = false, error = result.userMessage)
                     }
-                }
-            }
-        }
-    }
-
-    private suspend fun retryWithSimpleSearch(
-        current: LogViewerState,
-        startTime: String,
-        endTime: String,
-    ) {
-        // Fall back to a simpler search: look in common log field names
-        val searchFields = current.columns
-            .filter { !it.startsWith("p_") }
-            .take(5)
-
-        val safeSearch = escapeSql(current.searchQuery)
-        val searchClause = if (searchFields.isNotEmpty()) {
-            searchFields.joinToString(" OR ") { "\"$it\" ILIKE '%$safeSearch%'" }
-        } else {
-            _state.update { it.copy(isLoading = false, error = "Search unavailable: stream schema not loaded") }
-            return
-        }
-
-        // Combine existing filter clauses with the column-based search
-        val retryClauses = current.filterClauses.toMutableList()
-        retryClauses.add("($searchClause)")
-        val filterSql = retryClauses.joinToString(" AND ")
-
-        when (val result = repository.queryLogs(
-            stream = current.streamName,
-            startTime = startTime,
-            endTime = endTime,
-            filterSql = filterSql,
-            limit = current.currentLimit,
-        )) {
-            is ApiResult.Success -> {
-                _state.update {
-                    it.copy(
-                        logs = result.data,
-                        isLoading = false,
-                        hasMore = result.data.size >= it.currentLimit,
-                    )
-                }
-            }
-            is ApiResult.Error -> {
-                _state.update {
-                    it.copy(isLoading = false, error = result.userMessage)
                 }
             }
         }
@@ -368,7 +330,8 @@ class LogViewerViewModel @Inject constructor(
         }
 
         val whereClause = if (clauses.isNotEmpty()) " WHERE ${clauses.joinToString(" AND ")}" else ""
-        val sql = "SELECT * FROM \"${current.streamName}\"$whereClause ORDER BY p_timestamp DESC LIMIT 200"
+        val safeName = escapeIdentifier(current.streamName)
+        val sql = "SELECT * FROM \"$safeName\"$whereClause ORDER BY p_timestamp DESC LIMIT 200"
 
         when (val result = repository.queryLogsRaw(sql, startTime, endTime)) {
             is ApiResult.Success -> {

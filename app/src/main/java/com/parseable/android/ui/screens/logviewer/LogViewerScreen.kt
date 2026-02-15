@@ -109,7 +109,8 @@ fun LogViewerScreen(
                                         val file = withContext(kotlinx.coroutines.Dispatchers.IO) {
                                             val dir = java.io.File(context.cacheDir, "shared_logs")
                                             dir.mkdirs()
-                                            val file = java.io.File(dir, "logs_$streamName.json")
+                                            val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                            val file = java.io.File(dir, "logs_$safeFileName.json")
                                             file.bufferedWriter().use { writer ->
                                                 val prettyJson = Json { prettyPrint = true }
                                                 logs.forEachIndexed { index, log ->

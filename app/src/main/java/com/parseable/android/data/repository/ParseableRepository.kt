@@ -1,6 +1,7 @@
 package com.parseable.android.data.repository
 
 import com.parseable.android.data.api.ParseableApiClient
+import com.parseable.android.data.escapeIdentifier
 import com.parseable.android.data.model.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -115,7 +116,8 @@ class ParseableRepository @Inject constructor(
         limit: Int = 1000,
     ): ApiResult<List<JsonObject>> {
         val whereClause = if (filterSql.isNotBlank()) " WHERE $filterSql" else ""
-        val sql = "SELECT * FROM \"$stream\"$whereClause ORDER BY p_timestamp DESC LIMIT $limit"
+        val safeName = escapeIdentifier(stream)
+        val sql = "SELECT * FROM \"$safeName\"$whereClause ORDER BY p_timestamp DESC LIMIT $limit"
         return checkAuth(apiClient.queryLogs(sql, startTime, endTime))
     }
 

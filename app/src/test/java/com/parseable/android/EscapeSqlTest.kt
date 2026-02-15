@@ -1,5 +1,6 @@
 package com.parseable.android
 
+import com.parseable.android.data.escapeIdentifier
 import com.parseable.android.data.escapeSql
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -49,5 +50,25 @@ class EscapeSqlTest {
     @Test
     fun `escapeSql handles quote injection attempt`() {
         assertEquals("''; DROP TABLE users --", escapeSql("'; DROP TABLE users --"))
+    }
+
+    @Test
+    fun `escapeIdentifier doubles double quotes`() {
+        assertEquals("foo\"\"bar", escapeIdentifier("foo\"bar"))
+    }
+
+    @Test
+    fun `escapeIdentifier handles no quotes`() {
+        assertEquals("my_stream", escapeIdentifier("my_stream"))
+    }
+
+    @Test
+    fun `escapeIdentifier handles empty string`() {
+        assertEquals("", escapeIdentifier(""))
+    }
+
+    @Test
+    fun `escapeIdentifier handles consecutive double quotes`() {
+        assertEquals("\"\"\"\"", escapeIdentifier("\"\""))
     }
 }
