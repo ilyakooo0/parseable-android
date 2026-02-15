@@ -26,36 +26,52 @@ class ParseableApiClient @Inject constructor() {
         coerceInputValues = true
     }
 
-    private var client: OkHttpClient = buildClient()
+    private val secureClient: OkHttpClient = buildClient(allowInsecure = false)
+    private val insecureClient: OkHttpClient by lazy { buildClient(allowInsecure = true) }
+
+    @Volatile
     private var baseUrl: String = ""
+    @Volatile
     private var authHeader: String = ""
+    @Volatile
+    private var allowInsecure: Boolean = false
 
-    private fun buildClient(): OkHttpClient {
-        // Trust all certs for self-signed setups (common in dev/self-hosted)
-        val trustManager = object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        }
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
+    private val client: OkHttpClient
+        get() = if (allowInsecure) insecureClient else secureClient
 
-        return OkHttpClient.Builder()
+    private fun buildClient(allowInsecure: Boolean): OkHttpClient {
+        val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .sslSocketFactory(sslContext.socketFactory, trustManager)
-            .hostnameVerifier { _, _ -> true }
-            .build()
+
+        if (allowInsecure) {
+            val trustManager = object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
+            builder
+                .sslSocketFactory(sslContext.socketFactory, trustManager)
+                .hostnameVerifier { _, _ -> true }
+        }
+
+        return builder.build()
     }
 
     fun configure(config: ServerConfig) {
-        baseUrl = config.serverUrl.trimEnd('/')
+        val url = config.serverUrl.trimEnd('/')
         val credentials = "${config.username}:${config.password}"
-        authHeader = "Basic " + android.util.Base64.encodeToString(
+        val auth = "Basic " + android.util.Base64.encodeToString(
             credentials.toByteArray(),
             android.util.Base64.NO_WRAP
         )
+        // Write all volatile fields together; order matters for readers
+        this.allowInsecure = !config.useTls
+        this.authHeader = auth
+        this.baseUrl = url
     }
 
     val isConfigured: Boolean get() = baseUrl.isNotEmpty() && authHeader.isNotEmpty()

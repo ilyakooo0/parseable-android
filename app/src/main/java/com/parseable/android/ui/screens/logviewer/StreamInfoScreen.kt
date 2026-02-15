@@ -24,9 +24,14 @@ fun StreamInfoScreen(
     viewModel: StreamInfoViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(streamName) {
         viewModel.load(streamName)
+    }
+
+    LaunchedEffect(state.deleteSuccess) {
+        if (state.deleteSuccess) onBack()
     }
 
     Scaffold(
@@ -36,6 +41,18 @@ fun StreamInfoScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { showDeleteConfirmation = true },
+                        enabled = !state.isDeleting,
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete stream",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
                     }
                 },
             )
@@ -126,6 +143,44 @@ fun StreamInfoScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            icon = {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            title = { Text("Delete Stream") },
+            text = {
+                Text(
+                    "Are you sure you want to delete \"$streamName\"? " +
+                        "This will permanently remove all log data and cannot be undone."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        viewModel.deleteStream()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 

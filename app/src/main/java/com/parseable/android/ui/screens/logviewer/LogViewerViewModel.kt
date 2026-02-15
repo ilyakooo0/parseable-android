@@ -29,6 +29,7 @@ enum class TimeRange(val label: String, val minutes: Long) {
     LAST_24H("24h", 1440),
     LAST_7D("7d", 10080),
     LAST_30D("30d", 43200),
+    CUSTOM("Custom", 0),
 }
 
 data class LogViewerState(
@@ -46,6 +47,9 @@ data class LogViewerState(
     val hasMore: Boolean = false,
     val isStreaming: Boolean = false,
     val streamingNewCount: Int = 0,
+    val streamingError: String? = null,
+    val customStartTime: Long? = null,
+    val customEndTime: Long? = null,
 )
 
 @HiltViewModel
@@ -60,10 +64,15 @@ class LogViewerViewModel @Inject constructor(
 
     private var streamingJob: Job? = null
     private var lastSeenTimestamp: String? = null
+    private var consecutiveStreamingErrors: Int = 0
+    private var searchJob: Job? = null
 
     companion object {
         private const val STREAMING_INTERVAL_MS = 3000L
         private const val STREAMING_MAX_LOGS = 5000
+
+        /** Escape single quotes in user input to prevent SQL injection. */
+        fun escapeSql(value: String): String = value.replace("'", "''")
     }
 
     fun initialize(streamName: String) {
@@ -87,20 +96,45 @@ class LogViewerViewModel @Inject constructor(
 
     fun onTimeRangeChange(range: TimeRange) {
         stopStreaming()
-        _state.update { it.copy(selectedTimeRange = range, currentLimit = 500) }
+        _state.update {
+            it.copy(
+                selectedTimeRange = range,
+                currentLimit = 500,
+                customStartTime = if (range != TimeRange.CUSTOM) null else it.customStartTime,
+                customEndTime = if (range != TimeRange.CUSTOM) null else it.customEndTime,
+            )
+        }
+        if (range != TimeRange.CUSTOM) refresh()
+    }
+
+    fun setCustomTimeRange(startMillis: Long, endMillis: Long) {
+        stopStreaming()
+        _state.update {
+            it.copy(
+                selectedTimeRange = TimeRange.CUSTOM,
+                customStartTime = startMillis,
+                customEndTime = endMillis,
+                currentLimit = 500,
+            )
+        }
         refresh()
     }
 
     fun onSearchQueryChange(query: String) {
         _state.update { it.copy(searchQuery = query) }
-        refresh()
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(300)
+            refresh()
+        }
     }
 
     fun addFilter(column: String, operator: String, value: String) {
+        val safeValue = escapeSql(value)
         val clause = when (operator) {
             "IS NULL", "IS NOT NULL" -> "\"$column\" $operator"
-            "LIKE", "ILIKE" -> "\"$column\" $operator '%$value%'"
-            else -> "\"$column\" $operator '$value'"
+            "LIKE", "ILIKE" -> "\"$column\" $operator '%$safeValue%'"
+            else -> "\"$column\" $operator '$safeValue'"
         }
         val display = when (operator) {
             "IS NULL", "IS NOT NULL" -> "$column $operator"
@@ -170,8 +204,9 @@ class LogViewerViewModel @Inject constructor(
             // Build WHERE clause from filters + search
             val clauses = current.filterClauses.toMutableList()
             if (current.searchQuery.isNotBlank()) {
+                val safeSearch = escapeSql(current.searchQuery)
                 // Search across all text columns
-                clauses.add("CAST(* AS TEXT) ILIKE '%${current.searchQuery}%'")
+                clauses.add("CAST(* AS TEXT) ILIKE '%$safeSearch%'")
             }
 
             val filterSql = clauses.joinToString(" AND ")
@@ -216,8 +251,9 @@ class LogViewerViewModel @Inject constructor(
             .filter { !it.startsWith("p_") }
             .take(5)
 
+        val safeSearch = escapeSql(current.searchQuery)
         val searchClause = if (searchFields.isNotEmpty()) {
-            searchFields.joinToString(" OR ") { "\"$it\" ILIKE '%${current.searchQuery}%'" }
+            searchFields.joinToString(" OR ") { "\"$it\" ILIKE '%$safeSearch%'" }
         } else {
             return
         }
@@ -252,8 +288,20 @@ class LogViewerViewModel @Inject constructor(
     }
 
     private fun getTimeRange(): Pair<String, String> {
+        val current = _state.value
+        if (current.selectedTimeRange == TimeRange.CUSTOM &&
+            current.customStartTime != null && current.customEndTime != null
+        ) {
+            val start = ZonedDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(current.customStartTime), ZoneOffset.UTC
+            )
+            val end = ZonedDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(current.customEndTime), ZoneOffset.UTC
+            )
+            return Pair(start.format(dateFormatter), end.format(dateFormatter))
+        }
         val now = ZonedDateTime.now(ZoneOffset.UTC)
-        val start = now.minusMinutes(_state.value.selectedTimeRange.minutes)
+        val start = now.minusMinutes(current.selectedTimeRange.minutes)
         return Pair(
             start.format(dateFormatter),
             now.format(dateFormatter),
@@ -270,7 +318,8 @@ class LogViewerViewModel @Inject constructor(
 
     private fun startStreaming() {
         stopStreaming()
-        _state.update { it.copy(isStreaming = true, streamingNewCount = 0) }
+        consecutiveStreamingErrors = 0
+        _state.update { it.copy(isStreaming = true, streamingNewCount = 0, streamingError = null) }
 
         // Set the baseline timestamp to "now" so we only poll for new logs
         lastSeenTimestamp = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
@@ -286,7 +335,7 @@ class LogViewerViewModel @Inject constructor(
     fun stopStreaming() {
         streamingJob?.cancel()
         streamingJob = null
-        _state.update { it.copy(isStreaming = false, streamingNewCount = 0) }
+        _state.update { it.copy(isStreaming = false, streamingNewCount = 0, streamingError = null) }
     }
 
     private suspend fun pollNewLogs() {
@@ -299,11 +348,12 @@ class LogViewerViewModel @Inject constructor(
         // Build WHERE clause from active filters + search
         val clauses = current.filterClauses.toMutableList()
         if (current.searchQuery.isNotBlank()) {
+            val safeSearch = escapeSql(current.searchQuery)
             val searchFields = current.columns.filter { !it.startsWith("p_") }.take(5)
             if (searchFields.isNotEmpty()) {
                 clauses.add(
                     searchFields.joinToString(" OR ") {
-                        "\"$it\" ILIKE '%${current.searchQuery}%'"
+                        "\"$it\" ILIKE '%$safeSearch%'"
                     }
                 )
             }
@@ -334,11 +384,20 @@ class LogViewerViewModel @Inject constructor(
                         state.copy(
                             logs = capped,
                             streamingNewCount = state.streamingNewCount + newLogs.size,
+                            streamingError = null,
                         )
                     }
                 }
+                consecutiveStreamingErrors = 0
             }
-            is ApiResult.Error -> { /* Silently skip poll errors during streaming */ }
+            is ApiResult.Error -> {
+                consecutiveStreamingErrors++
+                if (consecutiveStreamingErrors >= 3) {
+                    _state.update {
+                        it.copy(streamingError = "Streaming interrupted: ${result.message}")
+                    }
+                }
+            }
         }
     }
 

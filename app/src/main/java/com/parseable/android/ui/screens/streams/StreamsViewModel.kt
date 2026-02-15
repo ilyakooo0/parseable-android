@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 
 data class StreamsState(
@@ -78,24 +80,29 @@ class StreamsViewModel @Inject constructor(
         }
     }
 
+    private val statsSemaphore = Semaphore(4)
+
     private fun loadStreamStats(streams: List<LogStream>) {
         viewModelScope.launch {
             val statsMap = mutableMapOf<String, StreamStatsUi>()
             streams.map { stream ->
                 async {
-                    val result = repository.getStreamStats(stream.name)
-                    if (result is ApiResult.Success) {
-                        val stats = result.data
-                        stream.name to StreamStatsUi(
-                            eventCount = stats.ingestion?.count
-                                ?: stats.ingestion?.lifetimeCount,
-                            ingestionSize = stats.ingestion?.size
-                                ?: stats.ingestion?.lifetimeSize,
-                            storageSize = stats.storage?.size
-                                ?: stats.storage?.lifetimeSize,
-                        )
-                    } else {
-                        null
+                    statsSemaphore.withPermit {
+                        repository.getStreamStats(stream.name)
+                    }.let { result ->
+                        if (result is ApiResult.Success) {
+                            val stats = result.data
+                            stream.name to StreamStatsUi(
+                                eventCount = stats.ingestion?.count
+                                    ?: stats.ingestion?.lifetimeCount,
+                                ingestionSize = stats.ingestion?.size
+                                    ?: stats.ingestion?.lifetimeSize,
+                                storageSize = stats.storage?.size
+                                    ?: stats.storage?.lifetimeSize,
+                            )
+                        } else {
+                            null
+                        }
                     }
                 }
             }.awaitAll().filterNotNull().forEach { (name, stats) ->

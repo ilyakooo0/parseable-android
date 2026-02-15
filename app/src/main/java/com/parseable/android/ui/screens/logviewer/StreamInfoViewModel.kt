@@ -22,6 +22,8 @@ data class StreamInfoState(
     val rawInfo: JsonObject? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val isDeleting: Boolean = false,
+    val deleteSuccess: Boolean = false,
 )
 
 @HiltViewModel
@@ -58,6 +60,24 @@ class StreamInfoViewModel @Inject constructor(
                         (schemaResult as? ApiResult.Error)?.message,
                     ).firstOrNull(),
                 )
+            }
+        }
+    }
+
+    fun deleteStream() {
+        val name = _state.value.streamName
+        if (name.isEmpty()) return
+        viewModelScope.launch {
+            _state.update { it.copy(isDeleting = true, error = null) }
+            when (val result = repository.deleteStream(name)) {
+                is ApiResult.Success -> {
+                    _state.update { it.copy(isDeleting = false, deleteSuccess = true) }
+                }
+                is ApiResult.Error -> {
+                    _state.update {
+                        it.copy(isDeleting = false, error = "Delete failed: ${result.message}")
+                    }
+                }
             }
         }
     }

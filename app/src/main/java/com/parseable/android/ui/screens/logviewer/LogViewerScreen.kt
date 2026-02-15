@@ -5,7 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -17,11 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.json.*
@@ -35,9 +37,11 @@ fun LogViewerScreen(
     viewModel: LogViewerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSqlSheet by remember { mutableStateOf(false) }
     var expandedLogIndex by remember { mutableIntStateOf(-1) }
+    var showDateRangePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(streamName) {
         viewModel.initialize(streamName)
@@ -88,6 +92,28 @@ fun LogViewerScreen(
                     IconButton(onClick = { showSqlSheet = true }) {
                         Icon(Icons.Filled.Code, contentDescription = "SQL Query")
                     }
+                    IconButton(
+                        onClick = {
+                            if (state.logs.isNotEmpty()) {
+                                val json = Json { prettyPrint = true }
+                                val text = state.logs.joinToString("\n") {
+                                    json.encodeToString(JsonObject.serializer(), it)
+                                }
+                                val sendIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                    putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
+                                    type = "text/plain"
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(sendIntent, "Share logs")
+                                )
+                            }
+                        },
+                        enabled = state.logs.isNotEmpty(),
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share logs")
+                    }
                 },
             )
         },
@@ -100,7 +126,13 @@ fun LogViewerScreen(
             // Time range chips
             TimeRangeBar(
                 selectedRange = state.selectedTimeRange,
-                onRangeSelected = viewModel::onTimeRangeChange,
+                onRangeSelected = { range ->
+                    if (range == TimeRange.CUSTOM) {
+                        showDateRangePicker = true
+                    } else {
+                        viewModel.onTimeRangeChange(range)
+                    }
+                },
             )
 
             // Quick search bar
@@ -193,6 +225,38 @@ fun LogViewerScreen(
                 }
             }
 
+            // Streaming error banner
+            AnimatedVisibility(visible = state.streamingError != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = state.streamingError ?: "",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        TextButton(onClick = viewModel::stopStreaming) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
+            }
+
             // Log entries
             PullToRefreshBox(
                 isRefreshing = state.isLoading,
@@ -251,11 +315,10 @@ fun LogViewerScreen(
                         contentPadding = PaddingValues(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        items(
+                        itemsIndexed(
                             state.logs,
-                            key = { it.hashCode() },
-                        ) { logEntry ->
-                            val index = state.logs.indexOf(logEntry)
+                            key = { index, _ -> index },
+                        ) { index, logEntry ->
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogIndex == index,
@@ -309,6 +372,41 @@ fun LogViewerScreen(
                 showSqlSheet = false
             },
         )
+    }
+
+    // Custom date range picker
+    if (showDateRangePicker) {
+        val dateRangePickerState = rememberDateRangePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val start = dateRangePickerState.selectedStartDateMillis
+                        val end = dateRangePickerState.selectedEndDateMillis
+                        if (start != null && end != null) {
+                            // end date should include the full day
+                            viewModel.setCustomTimeRange(start, end + 86_400_000L - 1)
+                        }
+                        showDateRangePicker = false
+                    },
+                    enabled = dateRangePickerState.selectedStartDateMillis != null &&
+                        dateRangePickerState.selectedEndDateMillis != null,
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDateRangePicker = false }) {
+                    Text("Cancel")
+                }
+            },
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
