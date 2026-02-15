@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
+import androidx.core.content.FileProvider
 import com.parseable.android.data.formatTimestamp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -104,21 +105,41 @@ fun LogViewerScreen(
                             val logs = state.logs
                             if (logs.isNotEmpty()) {
                                 scope.launch {
-                                    val text = withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                        val json = Json { prettyPrint = true }
-                                        logs.joinToString("\n") {
-                                            json.encodeToString(JsonObject.serializer(), it)
+                                    try {
+                                        val file = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            val dir = java.io.File(context.cacheDir, "shared_logs")
+                                            dir.mkdirs()
+                                            val file = java.io.File(dir, "logs_$streamName.json")
+                                            file.bufferedWriter().use { writer ->
+                                                val prettyJson = Json { prettyPrint = true }
+                                                logs.forEachIndexed { index, log ->
+                                                    writer.write(prettyJson.encodeToString(JsonObject.serializer(), log))
+                                                    if (index < logs.lastIndex) writer.newLine()
+                                                }
+                                            }
+                                            file
                                         }
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            file,
+                                        )
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
+                                            type = "application/json"
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(
+                                            Intent.createChooser(sendIntent, "Share logs")
+                                        )
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Failed to share logs: ${e.message}",
+                                            duration = SnackbarDuration.Short,
+                                        )
                                     }
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, text)
-                                        putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(
-                                        Intent.createChooser(sendIntent, "Share logs")
-                                    )
                                 }
                             }
                         },
@@ -546,9 +567,13 @@ fun LogEntryCard(
         Column(modifier = Modifier.padding(12.dp)) {
             // Timestamp row
             val rawTimestamp = remember(logEntry) {
-                logEntry["p_timestamp"]?.jsonPrimitive?.content
-                    ?: logEntry["datetime"]?.jsonPrimitive?.content
-                    ?: ""
+                try {
+                    logEntry["p_timestamp"]?.jsonPrimitive?.content
+                        ?: logEntry["datetime"]?.jsonPrimitive?.content
+                        ?: ""
+                } catch (_: Exception) {
+                    ""
+                }
             }
             val displayTimestamp = remember(rawTimestamp) {
                 if (rawTimestamp.isNotEmpty()) formatTimestamp(rawTimestamp) else ""

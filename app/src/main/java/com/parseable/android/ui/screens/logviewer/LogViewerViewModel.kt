@@ -378,7 +378,7 @@ class LogViewerViewModel @Inject constructor(
                     val newestTimestamp = try {
                         newLogs.firstOrNull()
                             ?.get("p_timestamp")?.jsonPrimitive?.content
-                    } catch (_: IllegalArgumentException) {
+                    } catch (_: Exception) {
                         null
                     }
                     if (newestTimestamp != null) {
