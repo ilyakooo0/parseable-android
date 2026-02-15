@@ -119,19 +119,55 @@ data class AboutInfo(
 )
 
 /**
- * Alert configuration
+ * Alert summary returned by GET /api/v1/alerts.
+ *
+ * The global alerts endpoint returns summary objects with fields like `title`, `state`,
+ * `severity`, and `datasets`. The per-stream endpoint uses `name` and `alerts[]` nesting.
+ * Both shapes are supported via optional fields.
  */
 @Serializable
 data class Alert(
     val id: String? = null,
     val version: String? = null,
+    // Per-stream alert format uses "name"; global summary uses "title"
     val name: String? = null,
+    val title: String? = null,
     val message: String? = null,
     val rule: JsonObject? = null,
     val targets: List<JsonObject> = emptyList(),
+    // Per-stream alert format
     val stream: String? = null,
     val enabled: Boolean? = null,
-)
+    // Global summary fields
+    val state: String? = null,
+    val severity: String? = null,
+    @SerialName("alertType")
+    val alertType: String? = null,
+    @SerialName("notificationState")
+    val notificationState: String? = null,
+    val created: String? = null,
+    @SerialName("lastTriggeredAt")
+    val lastTriggeredAt: String? = null,
+    val tags: List<String> = emptyList(),
+    val datasets: List<String> = emptyList(),
+) {
+    /** Best-effort display name from either response format. */
+    val displayName: String get() = title ?: name ?: "Unnamed Alert"
+
+    /** Whether the alert is active, derived from either response format. */
+    val isEnabled: Boolean get() = when {
+        state != null -> state != "Disabled"
+        enabled != null -> enabled
+        else -> true
+    }
+
+    /** Stream(s) this alert is configured for. */
+    val streamDisplay: String? get() = when {
+        datasets.isNotEmpty() -> datasets.joinToString(", ")
+        stream != null -> stream
+        else -> null
+    }
+}
 
 /**
  * Result wrapper for API calls

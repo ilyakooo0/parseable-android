@@ -44,8 +44,8 @@ class AlertsViewModelTest {
     @Test
     fun `refresh loads alerts on success`() = runTest {
         val alerts = listOf(
-            Alert(id = "1", name = "Alert 1", stream = "stream1"),
-            Alert(id = "2", name = "Alert 2", stream = "stream2"),
+            Alert(id = "1", title = "Alert 1", datasets = listOf("stream1"), state = "NotTriggered"),
+            Alert(id = "2", title = "Alert 2", datasets = listOf("stream2"), state = "Triggered"),
         )
         coEvery { repository.listAlerts() } returns ApiResult.Success(alerts)
 
@@ -71,7 +71,7 @@ class AlertsViewModelTest {
 
     @Test
     fun `requestDelete sets alertToDelete`() {
-        val alert = Alert(id = "1", name = "Alert 1", stream = "stream1")
+        val alert = Alert(id = "1", title = "Alert 1", datasets = listOf("stream1"))
 
         viewModel.requestDelete(alert)
 
@@ -81,7 +81,7 @@ class AlertsViewModelTest {
 
     @Test
     fun `cancelDelete clears alertToDelete`() {
-        val alert = Alert(id = "1", name = "Alert 1", stream = "stream1")
+        val alert = Alert(id = "1", title = "Alert 1", datasets = listOf("stream1"))
         viewModel.requestDelete(alert)
         assertEquals(alert, viewModel.state.value.alertToDelete)
 
@@ -93,7 +93,7 @@ class AlertsViewModelTest {
     @Test
     fun `deleteAlert on success refreshes list`() = runTest {
         val alerts = listOf(
-            Alert(id = "2", name = "Alert 2", stream = "stream2"),
+            Alert(id = "2", title = "Alert 2", datasets = listOf("stream2")),
         )
         coEvery { repository.deleteAlert("1") } returns ApiResult.Success("deleted")
         coEvery { repository.listAlerts() } returns ApiResult.Success(alerts)
