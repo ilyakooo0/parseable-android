@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,9 +121,13 @@ fun StreamInfoScreen(
 
                 // Raw info section
                 if (state.rawInfo != null) {
+                    val prettyInfo = remember(state.rawInfo) {
+                        val prettyJson = Json { prettyPrint = true }
+                        prettyJson.encodeToString(JsonObject.serializer(), state.rawInfo!!)
+                    }
                     InfoSection(title = "Stream Info") {
                         Text(
-                            text = state.rawInfo.toString(),
+                            text = prettyInfo,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                         )

@@ -56,11 +56,11 @@ class StreamInfoViewModel @Inject constructor(
                     rawInfo = (infoResult as? ApiResult.Success)?.data,
                     isLoading = false,
                     error = listOfNotNull(
-                        (statsResult as? ApiResult.Error)?.message,
-                        (schemaResult as? ApiResult.Error)?.message,
-                        (retentionResult as? ApiResult.Error)?.message,
-                        (infoResult as? ApiResult.Error)?.message,
-                    ).firstOrNull(),
+                        (statsResult as? ApiResult.Error)?.userMessage,
+                        (schemaResult as? ApiResult.Error)?.userMessage,
+                        (retentionResult as? ApiResult.Error)?.userMessage,
+                        (infoResult as? ApiResult.Error)?.userMessage,
+                    ).distinct().joinToString("\n").ifEmpty { null },
                 )
             }
         }
@@ -77,7 +77,7 @@ class StreamInfoViewModel @Inject constructor(
                 }
                 is ApiResult.Error -> {
                     _state.update {
-                        it.copy(isDeleting = false, error = "Delete failed: ${result.message}")
+                        it.copy(isDeleting = false, error = "Delete failed: ${result.userMessage}")
                     }
                 }
             }

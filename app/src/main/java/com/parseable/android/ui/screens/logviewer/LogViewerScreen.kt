@@ -279,7 +279,7 @@ fun LogViewerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 Icons.Filled.ErrorOutline,
-                                contentDescription = "Error",
+                                contentDescription = "Error loading logs",
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.error,
                             )
@@ -304,7 +304,7 @@ fun LogViewerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 Icons.Filled.SearchOff,
-                                contentDescription = "No results",
+                                contentDescription = "No logs found",
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -408,9 +408,21 @@ fun LogViewerScreen(
                         val start = dateRangePickerState.selectedStartDateMillis
                         val end = dateRangePickerState.selectedEndDateMillis
                         if (start != null && end != null) {
-                            // DateRangePicker returns midnight UTC; set end to 23:59:59.999
-                            val endOfDay = end + (24 * 60 * 60 * 1000L) - 1
-                            viewModel.setCustomTimeRange(start, endOfDay)
+                            // DateRangePicker returns midnight UTC for the selected date.
+                            // Adjust to cover the full end day in the user's local timezone:
+                            // Convert to local date, get end-of-day, convert back to UTC millis.
+                            val localZone = java.time.ZoneId.systemDefault()
+                            val endLocalDate = java.time.Instant.ofEpochMilli(end)
+                                .atZone(localZone).toLocalDate()
+                            val endOfDayUtc = endLocalDate.plusDays(1)
+                                .atStartOfDay(localZone)
+                                .toInstant().toEpochMilli() - 1
+                            val startLocalDate = java.time.Instant.ofEpochMilli(start)
+                                .atZone(localZone).toLocalDate()
+                            val startUtc = startLocalDate
+                                .atStartOfDay(localZone)
+                                .toInstant().toEpochMilli()
+                            viewModel.setCustomTimeRange(startUtc, endOfDayUtc)
                         }
                         showDateRangePicker = false
                     },
@@ -488,12 +500,34 @@ private fun StreamingToggleButton(
     }
 }
 
+internal fun formatTimestamp(raw: String): String {
+    return try {
+        val instant = java.time.Instant.parse(raw)
+        val local = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
+        local.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS"))
+    } catch (_: Exception) {
+        // Try alternate format with +00:00 suffix
+        try {
+            val normalized = raw.replace("+00:00", "Z")
+            val instant = java.time.Instant.parse(normalized)
+            val local = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
+            local.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS"))
+        } catch (_: Exception) {
+            raw
+        }
+    }
+}
+
 @Composable
 fun LogEntryCard(
     logEntry: JsonObject,
     isExpanded: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val clipboardManager = remember {
+        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    }
     val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     val cardColors = remember(containerColor) {
         CardDefaults.cardColors(containerColor = containerColor)
@@ -505,15 +539,18 @@ fun LogEntryCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Timestamp row
-            val timestamp = remember(logEntry) {
+            val rawTimestamp = remember(logEntry) {
                 logEntry["p_timestamp"]?.jsonPrimitive?.content
                     ?: logEntry["datetime"]?.jsonPrimitive?.content
                     ?: ""
             }
+            val displayTimestamp = remember(rawTimestamp) {
+                if (rawTimestamp.isNotEmpty()) formatTimestamp(rawTimestamp) else ""
+            }
 
-            if (timestamp.isNotEmpty()) {
+            if (displayTimestamp.isNotEmpty()) {
                 Text(
-                    text = timestamp,
+                    text = displayTimestamp,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontFamily = FontFamily.Monospace,
@@ -538,9 +575,31 @@ fun LogEntryCard(
                     fontSize = 12.sp,
                 )
             } else {
-                // Expanded view: show all fields
-                val entries = remember(logEntry) { logEntry.entries.toList() }
+                // Expanded view: show all fields + copy button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IconButton(
+                        onClick = {
+                            val prettyJson = Json { prettyPrint = true }
+                            val text = prettyJson.encodeToString(JsonObject.serializer(), logEntry)
+                            clipboardManager.setPrimaryClip(
+                                android.content.ClipData.newPlainText("Log entry", text)
+                            )
+                        },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = "Copy log entry to clipboard",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                val entries = remember(logEntry) { logEntry.entries.toList() }
                 entries.forEach { (key, value) ->
                     Row(
                         modifier = Modifier

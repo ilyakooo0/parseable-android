@@ -35,7 +35,7 @@ class AlertsViewModel @Inject constructor(
                     _state.update { it.copy(alerts = result.data, isLoading = false) }
                 }
                 is ApiResult.Error -> {
-                    _state.update { it.copy(isLoading = false, error = result.message) }
+                    _state.update { it.copy(isLoading = false, error = result.userMessage) }
                 }
             }
         }

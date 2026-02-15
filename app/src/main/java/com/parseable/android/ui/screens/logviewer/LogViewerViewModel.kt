@@ -63,6 +63,7 @@ class LogViewerViewModel @Inject constructor(
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+00:00'")
 
     private var streamingJob: Job? = null
+    private var streamingGeneration: Int = 0
     private var lastSeenTimestamp: String? = null
     private var consecutiveStreamingErrors: Int = 0
     private var searchJob: Job? = null
@@ -186,7 +187,7 @@ class LogViewerViewModel @Inject constructor(
                 }
                 is ApiResult.Error -> {
                     _state.update {
-                        it.copy(isLoading = false, error = result.message)
+                        it.copy(isLoading = false, error = result.userMessage)
                     }
                 }
             }
@@ -234,7 +235,7 @@ class LogViewerViewModel @Inject constructor(
                         retryWithSimpleSearch(current, startTime, endTime)
                     } else {
                         _state.update {
-                            it.copy(isLoading = false, error = result.message)
+                            it.copy(isLoading = false, error = result.userMessage)
                         }
                     }
                 }
@@ -283,7 +284,7 @@ class LogViewerViewModel @Inject constructor(
             }
             is ApiResult.Error -> {
                 _state.update {
-                    it.copy(isLoading = false, error = result.message)
+                    it.copy(isLoading = false, error = result.userMessage)
                 }
             }
         }
@@ -326,13 +327,14 @@ class LogViewerViewModel @Inject constructor(
     private fun startStreaming() {
         stopStreaming()
         consecutiveStreamingErrors = 0
+        val generation = ++streamingGeneration
         _state.update { it.copy(isStreaming = true, streamingNewCount = 0, streamingError = null) }
 
         // Set the baseline timestamp to "now" so we only poll for new logs
         lastSeenTimestamp = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
 
         streamingJob = viewModelScope.launch {
-            while (isActive) {
+            while (isActive && streamingGeneration == generation) {
                 pollNewLogs()
                 delay(STREAMING_INTERVAL_MS)
             }
@@ -340,6 +342,7 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun stopStreaming() {
+        streamingGeneration++
         streamingJob?.cancel()
         streamingJob = null
         _state.update { it.copy(isStreaming = false, streamingNewCount = 0, streamingError = null) }
@@ -405,7 +408,7 @@ class LogViewerViewModel @Inject constructor(
                 consecutiveStreamingErrors++
                 if (consecutiveStreamingErrors >= 3) {
                     _state.update {
-                        it.copy(streamingError = "Streaming interrupted: ${result.message}")
+                        it.copy(streamingError = "Streaming interrupted: ${result.userMessage}")
                     }
                 }
             }

@@ -2,6 +2,8 @@ package com.parseable.android.data.repository
 
 import com.parseable.android.data.api.ParseableApiClient
 import com.parseable.android.data.model.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -24,6 +26,16 @@ class ParseableRepository @Inject constructor(
         private const val SCHEMA_TTL_MS = 120_000L    // 2min
         private const val STATS_TTL_MS = 30_000L      // 30s
         private const val ABOUT_TTL_MS = 300_000L     // 5min
+    }
+
+    private val _authErrorChannel = Channel<Unit>(Channel.CONFLATED)
+    val authErrors = _authErrorChannel.receiveAsFlow()
+
+    private fun <T> checkAuth(result: ApiResult<T>): ApiResult<T> {
+        if (result is ApiResult.Error && result.isUnauthorized) {
+            _authErrorChannel.trySend(Unit)
+        }
+        return result
     }
 
     private var streamsCache: CacheEntry<List<LogStream>>? = null
@@ -49,7 +61,7 @@ class ParseableRepository @Inject constructor(
 
     suspend fun getAbout(): ApiResult<AboutInfo> {
         aboutCache?.let { if (it.isValid(ABOUT_TTL_MS)) return ApiResult.Success(it.data) }
-        return apiClient.getAbout().also { result ->
+        return checkAuth(apiClient.getAbout()).also { result ->
             if (result is ApiResult.Success) {
                 aboutCache = CacheEntry(result.data)
             }
@@ -60,7 +72,7 @@ class ParseableRepository @Inject constructor(
         if (!forceRefresh) {
             streamsCache?.let { if (it.isValid(STREAMS_TTL_MS)) return ApiResult.Success(it.data) }
         }
-        return apiClient.listStreams().also { result ->
+        return checkAuth(apiClient.listStreams()).also { result ->
             if (result is ApiResult.Success) {
                 streamsCache = CacheEntry(result.data)
             }
@@ -71,7 +83,7 @@ class ParseableRepository @Inject constructor(
         if (!forceRefresh) {
             schemaCache[stream]?.let { if (it.isValid(SCHEMA_TTL_MS)) return ApiResult.Success(it.data) }
         }
-        return apiClient.getStreamSchema(stream).also { result ->
+        return checkAuth(apiClient.getStreamSchema(stream)).also { result ->
             if (result is ApiResult.Success) {
                 schemaCache[stream] = CacheEntry(result.data)
             }
@@ -82,7 +94,7 @@ class ParseableRepository @Inject constructor(
         if (!forceRefresh) {
             statsCache[stream]?.let { if (it.isValid(STATS_TTL_MS)) return ApiResult.Success(it.data) }
         }
-        return apiClient.getStreamStats(stream).also { result ->
+        return checkAuth(apiClient.getStreamStats(stream)).also { result ->
             if (result is ApiResult.Success) {
                 statsCache[stream] = CacheEntry(result.data)
             }
@@ -90,10 +102,10 @@ class ParseableRepository @Inject constructor(
     }
 
     suspend fun getStreamInfo(stream: String): ApiResult<JsonObject> =
-        apiClient.getStreamInfo(stream)
+        checkAuth(apiClient.getStreamInfo(stream))
 
     suspend fun getStreamRetention(stream: String): ApiResult<List<RetentionConfig>> =
-        apiClient.getStreamRetention(stream)
+        checkAuth(apiClient.getStreamRetention(stream))
 
     suspend fun queryLogs(
         stream: String,
@@ -104,21 +116,21 @@ class ParseableRepository @Inject constructor(
     ): ApiResult<List<JsonObject>> {
         val whereClause = if (filterSql.isNotBlank()) " WHERE $filterSql" else ""
         val sql = "SELECT * FROM \"$stream\"$whereClause ORDER BY p_timestamp DESC LIMIT $limit"
-        return apiClient.queryLogs(sql, startTime, endTime)
+        return checkAuth(apiClient.queryLogs(sql, startTime, endTime))
     }
 
     suspend fun queryLogsRaw(
         sql: String,
         startTime: String,
         endTime: String,
-    ): ApiResult<List<JsonObject>> = apiClient.queryLogs(sql, startTime, endTime)
+    ): ApiResult<List<JsonObject>> = checkAuth(apiClient.queryLogs(sql, startTime, endTime))
 
     suspend fun deleteStream(stream: String): ApiResult<String> {
         invalidateAll()
-        return apiClient.deleteStream(stream)
+        return checkAuth(apiClient.deleteStream(stream))
     }
 
-    suspend fun listAlerts(): ApiResult<List<Alert>> = apiClient.listAlerts()
+    suspend fun listAlerts(): ApiResult<List<Alert>> = checkAuth(apiClient.listAlerts())
 
-    suspend fun listUsers(): ApiResult<List<JsonObject>> = apiClient.listUsers()
+    suspend fun listUsers(): ApiResult<List<JsonObject>> = checkAuth(apiClient.listUsers())
 }

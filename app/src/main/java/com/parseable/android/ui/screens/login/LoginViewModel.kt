@@ -128,7 +128,7 @@ class LoginViewModel @Inject constructor(
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            error = "Connection failed: ${result.message}",
+                            error = "Connection failed: ${result.userMessage}",
                         )
                     }
                 }

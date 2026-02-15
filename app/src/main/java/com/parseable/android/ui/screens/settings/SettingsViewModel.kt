@@ -23,6 +23,7 @@ data class SettingsState(
     val useTls: Boolean = true,
     val aboutInfo: AboutInfo? = null,
     val users: List<String> = emptyList(),
+    val isLoading: Boolean = false,
 )
 
 @HiltViewModel
@@ -40,7 +41,18 @@ class SettingsViewModel @Inject constructor(
 
     fun load() {
         viewModelScope.launch {
+            _state.update { it.copy(isLoading = true) }
+
             val config = settingsRepository.serverConfig.first()
+
+            // Show server info immediately
+            _state.update {
+                it.copy(
+                    serverUrl = config?.serverUrl ?: it.serverUrl,
+                    username = config?.username ?: it.username,
+                    useTls = config?.useTls ?: it.useTls,
+                )
+            }
 
             val aboutDeferred = async { repository.getAbout() }
             val usersDeferred = async { repository.listUsers() }
@@ -55,11 +67,9 @@ class SettingsViewModel @Inject constructor(
 
             _state.update {
                 it.copy(
-                    serverUrl = config?.serverUrl ?: it.serverUrl,
-                    username = config?.username ?: it.username,
-                    useTls = config?.useTls ?: it.useTls,
                     aboutInfo = (aboutResult as? ApiResult.Success)?.data ?: it.aboutInfo,
                     users = userNames.ifEmpty { it.users },
+                    isLoading = false,
                 )
             }
         }

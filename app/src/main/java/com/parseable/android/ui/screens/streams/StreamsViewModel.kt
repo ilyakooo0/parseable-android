@@ -72,7 +72,7 @@ class StreamsViewModel @Inject constructor(
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            error = streamsResult.message,
+                            error = streamsResult.userMessage,
                         )
                     }
                 }

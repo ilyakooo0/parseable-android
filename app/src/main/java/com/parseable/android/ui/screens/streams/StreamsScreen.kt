@@ -78,7 +78,7 @@ fun StreamsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             Icons.Filled.ErrorOutline,
-                            contentDescription = "Error",
+                            contentDescription = "Error loading streams",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error,
                         )
@@ -102,7 +102,7 @@ fun StreamsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             Icons.Filled.Inbox,
-                            contentDescription = "No streams",
+                            contentDescription = "No log streams found",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

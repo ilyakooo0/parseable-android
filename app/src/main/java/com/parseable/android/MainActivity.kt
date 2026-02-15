@@ -19,6 +19,8 @@ import com.parseable.android.ui.navigation.Routes
 import com.parseable.android.ui.theme.ParseableTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -48,6 +50,19 @@ class MainActivity : ComponentActivity() {
 
                 if (startDestination != null) {
                     val navController = rememberNavController()
+
+                    // Navigate to login on 401 auth errors
+                    LaunchedEffect(navController) {
+                        repository.authErrors
+                            .onEach {
+                                settingsRepository.clearConfig()
+                                navController.navigate(Routes.LOGIN) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                            .launchIn(this)
+                    }
+
                     ParseableNavGraph(
                         navController = navController,
                         startDestination = startDestination!!,

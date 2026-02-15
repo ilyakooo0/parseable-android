@@ -13,10 +13,10 @@ private val ParseableSecondary = Color(0xFF3D43B0)
 private val ParseableTertiary = Color(0xFF7C82FF)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = ParseableTertiary,
+    primary = ParseableTertiary, // Lighter variant for dark background readability
     onPrimary = Color.White,
-    secondary = ParseableSecondary,
-    tertiary = ParseablePrimary,
+    secondary = ParseablePrimary,
+    tertiary = ParseableSecondary,
     background = Color(0xFF0F1117),
     surface = Color(0xFF1A1B23),
     surfaceVariant = Color(0xFF25262F),

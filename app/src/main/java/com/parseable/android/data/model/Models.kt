@@ -138,5 +138,25 @@ data class Alert(
  */
 sealed class ApiResult<out T> {
     data class Success<T>(val data: T) : ApiResult<T>()
-    data class Error(val message: String, val code: Int = 0) : ApiResult<Nothing>()
+    data class Error(val message: String, val code: Int = 0) : ApiResult<Nothing>() {
+        val isUnauthorized: Boolean get() = code == 401
+        val isNotFound: Boolean get() = code == 404
+        val isServerError: Boolean get() = code in 500..599
+        val isNetworkError: Boolean get() = code == 0
+
+        val userMessage: String get() = when {
+            code == 401 -> "Session expired. Please log in again."
+            code == 403 -> "Permission denied."
+            code == 404 -> "Resource not found. It may have been deleted."
+            code == 429 -> "Too many requests. Please wait and try again."
+            code in 500..599 -> "Server error ($code). Please try again later."
+            code == 0 -> when {
+                message.contains("timeout", ignoreCase = true) -> "Connection timed out. Check your network."
+                message.contains("Unable to resolve host", ignoreCase = true) -> "No internet connection."
+                message.contains("Connection refused", ignoreCase = true) -> "Server is unreachable."
+                else -> "Network error: $message"
+            }
+            else -> message
+        }
+    }
 }

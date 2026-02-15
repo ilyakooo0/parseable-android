@@ -50,6 +50,32 @@ fun AlertsScreen(
             ) {
                 CircularProgressIndicator()
             }
+        } else if (state.error != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Filled.ErrorOutline,
+                        contentDescription = "Error loading alerts",
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = state.error!!,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(onClick = viewModel::refresh) {
+                        Text("Retry")
+                    }
+                }
+            }
         } else if (state.alerts.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -60,13 +86,13 @@ fun AlertsScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         Icons.Filled.NotificationsOff,
-                        contentDescription = null,
+                        contentDescription = "No alerts",
                         modifier = Modifier.size(48.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = if (state.error != null) state.error!! else "No alerts configured",
+                        text = "No alerts configured",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -105,7 +131,7 @@ private fun AlertCard(alert: Alert) {
                     Icon(
                         if (alert.enabled == true) Icons.Filled.NotificationsActive
                         else Icons.Filled.NotificationsOff,
-                        contentDescription = null,
+                        contentDescription = if (alert.enabled == true) "Alert enabled" else "Alert disabled",
                         tint = if (alert.enabled == true) {
                             MaterialTheme.colorScheme.primary
                         } else {
