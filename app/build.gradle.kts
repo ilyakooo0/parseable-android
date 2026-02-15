@@ -1,3 +1,7 @@
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,6 +11,11 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val buildInstant: Instant = Instant.now()
+val buildTime = buildInstant.atZone(ZoneOffset.UTC)
+val dateVersionName = buildTime.format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
+val dateVersionCode = (buildInstant.epochSecond / 60).toInt()
+
 android {
     namespace = "com.parseable.android"
     compileSdk = 35
@@ -15,8 +24,8 @@ android {
         applicationId = "com.parseable.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = libs.versions.appVersionCode.get().toInt()
-        versionName = libs.versions.appVersionName.get()
+        versionCode = dateVersionCode
+        versionName = dateVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
