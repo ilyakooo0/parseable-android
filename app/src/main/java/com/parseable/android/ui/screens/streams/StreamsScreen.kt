@@ -3,6 +3,7 @@ package com.parseable.android.ui.screens.streams
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
@@ -35,6 +36,15 @@ fun StreamsScreen(
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val listState = rememberLazyListState()
+
+    // Scroll to top when a refresh completes (isLoading transitions to false)
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) {
+            listState.scrollToItem(0)
+        }
+    }
 
     val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {
         val favorites = state.favoriteNames
@@ -169,6 +179,7 @@ fun StreamsScreen(
                         )
                     }
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f),
