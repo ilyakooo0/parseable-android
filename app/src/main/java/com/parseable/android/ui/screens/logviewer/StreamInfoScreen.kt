@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.parseable.android.data.formatBytes
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -94,8 +95,8 @@ fun StreamInfoScreen(
                 state.stats?.let { stats ->
                     InfoSection(title = "Statistics") {
                         InfoRow("Event Count", stats.ingestion?.count?.toString() ?: stats.ingestion?.lifetimeCount?.toString() ?: "N/A")
-                        InfoRow("Ingestion Size", stats.ingestion?.size ?: stats.ingestion?.lifetimeSize ?: "N/A")
-                        InfoRow("Storage Size", stats.storage?.size ?: stats.storage?.lifetimeSize ?: "N/A")
+                        InfoRow("Ingestion Size", formatBytes(stats.ingestion?.size) ?: formatBytes(stats.ingestion?.lifetimeSize) ?: "N/A")
+                        InfoRow("Storage Size", formatBytes(stats.storage?.size) ?: formatBytes(stats.storage?.lifetimeSize) ?: "N/A")
                         if (stats.ingestion?.lifetimeCount != null) {
                             InfoRow("Lifetime Events", stats.ingestion.lifetimeCount.toString())
                         }
