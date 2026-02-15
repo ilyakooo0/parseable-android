@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,11 +80,11 @@ class StreamsViewModel @Inject constructor(
 
             try {
                 // Fetch about info and streams in parallel
-                val aboutDeferred = async { repository.getAbout() }
-                val streamsDeferred = async { repository.listStreams(forceRefresh = true) }
-
-                val aboutResult = aboutDeferred.await()
-                val streamsResult = streamsDeferred.await()
+                val (aboutResult, streamsResult) = coroutineScope {
+                    val aboutDeferred = async { repository.getAbout() }
+                    val streamsDeferred = async { repository.listStreams(forceRefresh = true) }
+                    aboutDeferred.await() to streamsDeferred.await()
+                }
 
                 if (aboutResult is ApiResult.Success) {
                     _state.update { it.copy(aboutInfo = aboutResult.data) }
