@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.escapeIdentifier
 import com.parseable.android.data.escapeSql
-import com.parseable.android.data.model.ApiResult
+import com.parseable.android.data.model.*
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -49,6 +49,13 @@ data class StreamingState(
     val currentIntervalMs: Long = 3000L,
 )
 
+data class SavedFiltersState(
+    val filters: List<SavedFilter> = emptyList(),
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val error: String? = null,
+)
+
 data class LogViewerState(
     val streamName: String = "",
     val logs: List<JsonObject> = emptyList(),
@@ -58,6 +65,7 @@ data class LogViewerState(
     val selectedTimeRange: TimeRange = TimeRange.LAST_1H,
     val filters: FilterState = FilterState(),
     val streaming: StreamingState = StreamingState(),
+    val savedFilters: SavedFiltersState = SavedFiltersState(),
     val currentLimit: Int = 500,
     val hasMore: Boolean = false,
     val customStartTime: Long? = null,
@@ -469,6 +477,178 @@ class LogViewerViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // --- Saved Filters (synced with Parseable server) ---
+
+    fun loadSavedFilters() {
+        viewModelScope.launch {
+            _state.update { it.copy(savedFilters = it.savedFilters.copy(isLoading = true, error = null)) }
+            when (val result = repository.listFilters()) {
+                is ApiResult.Success -> {
+                    val streamFilters = result.data.filter { it.streamName == _state.value.streamName }
+                    _state.update {
+                        it.copy(savedFilters = it.savedFilters.copy(filters = streamFilters, isLoading = false))
+                    }
+                }
+                is ApiResult.Error -> {
+                    _state.update {
+                        it.copy(savedFilters = it.savedFilters.copy(isLoading = false, error = result.userMessage))
+                    }
+                }
+            }
+        }
+    }
+
+    fun saveCurrentFilter(name: String) {
+        val current = _state.value
+        if (current.streamName.isEmpty()) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(savedFilters = it.savedFilters.copy(isSaving = true, error = null)) }
+
+            val query = if (current.filters.customSql.isNotBlank()) {
+                SavedFilterQuery(
+                    filterType = "sql",
+                    filterQuery = current.filters.customSql,
+                )
+            } else {
+                val ruleGroups = current.filters.activeFilters.zip(current.filters.filterClauses)
+                    .mapIndexed { index, (display, _) ->
+                        // Parse display back to field/operator/value
+                        val parts = parseFilterDisplay(display)
+                        FilterRule(
+                            id = "rule_$index",
+                            field = parts.first,
+                            value = parts.third,
+                            operator = parts.second,
+                        )
+                    }
+                val builder = if (ruleGroups.isNotEmpty()) {
+                    FilterBuilder(
+                        id = "root",
+                        combinator = "and",
+                        rules = listOf(
+                            FilterRuleGroup(
+                                id = "group_0",
+                                combinator = "and",
+                                rules = ruleGroups,
+                            ),
+                        ),
+                    )
+                } else null
+
+                SavedFilterQuery(
+                    filterType = if (current.filters.searchQuery.isNotBlank()) "search" else "filter",
+                    filterQuery = current.filters.searchQuery.ifBlank { null },
+                    filterBuilder = builder,
+                )
+            }
+
+            val filter = SavedFilter(
+                filterName = name,
+                streamName = current.streamName,
+                query = query,
+            )
+
+            when (val result = repository.createFilter(filter)) {
+                is ApiResult.Success -> {
+                    _state.update {
+                        it.copy(
+                            savedFilters = it.savedFilters.copy(
+                                isSaving = false,
+                                filters = it.savedFilters.filters + result.data,
+                            ),
+                        )
+                    }
+                }
+                is ApiResult.Error -> {
+                    _state.update {
+                        it.copy(savedFilters = it.savedFilters.copy(isSaving = false, error = result.userMessage))
+                    }
+                }
+            }
+        }
+    }
+
+    fun applySavedFilter(filter: SavedFilter) {
+        stopStreaming()
+
+        when (filter.query.filterType) {
+            "sql" -> {
+                val sql = filter.query.filterQuery ?: return
+                _state.update {
+                    it.copy(
+                        filters = FilterState(customSql = sql),
+                        currentLimit = 500,
+                    )
+                }
+                executeCustomSql(sql)
+            }
+            "search" -> {
+                val searchQuery = filter.query.filterQuery ?: ""
+                _state.update {
+                    it.copy(
+                        filters = FilterState(searchQuery = searchQuery),
+                        currentLimit = 500,
+                    )
+                }
+                // Also apply builder rules if present
+                applyBuilderRules(filter.query.filterBuilder)
+                refresh()
+            }
+            else -> {
+                _state.update {
+                    it.copy(
+                        filters = FilterState(),
+                        currentLimit = 500,
+                    )
+                }
+                applyBuilderRules(filter.query.filterBuilder)
+                refresh()
+            }
+        }
+    }
+
+    private fun applyBuilderRules(builder: FilterBuilder?) {
+        if (builder == null) return
+        for (group in builder.rules) {
+            for (rule in group.rules) {
+                if (rule.field.isNotBlank()) {
+                    addFilter(rule.field, rule.operator, rule.value)
+                }
+            }
+        }
+    }
+
+    fun deleteSavedFilter(filterId: String) {
+        viewModelScope.launch {
+            when (repository.deleteFilter(filterId)) {
+                is ApiResult.Success -> {
+                    _state.update {
+                        it.copy(
+                            savedFilters = it.savedFilters.copy(
+                                filters = it.savedFilters.filters.filter { f -> f.filterId != filterId },
+                            ),
+                        )
+                    }
+                }
+                is ApiResult.Error -> { /* Silently ignore — will show on next reload */ }
+            }
+        }
+    }
+
+    /** Parse a display string like "column = value" back into (field, operator, value) */
+    private fun parseFilterDisplay(display: String): Triple<String, String, String> {
+        for (op in listOf("IS NOT NULL", "IS NULL", "ILIKE", "LIKE", "!=", ">=", "<=", "=", ">", "<")) {
+            val idx = display.indexOf(" $op")
+            if (idx >= 0) {
+                val field = display.substring(0, idx)
+                val value = display.substring(idx + op.length + 1).trim()
+                return Triple(field, op, value)
+            }
+        }
+        return Triple(display, "=", "")
     }
 
     override fun onCleared() {
