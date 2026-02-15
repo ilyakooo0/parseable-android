@@ -9,6 +9,7 @@ import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,11 +58,11 @@ class SettingsViewModel @Inject constructor(
             }
 
             try {
-                val aboutDeferred = async { repository.getAbout() }
-                val usersDeferred = async { repository.listUsers() }
-
-                val aboutResult = aboutDeferred.await()
-                val usersResult = usersDeferred.await()
+                val (aboutResult, usersResult) = coroutineScope {
+                    val aboutDeferred = async { repository.getAbout() }
+                    val usersDeferred = async { repository.listUsers() }
+                    aboutDeferred.await() to usersDeferred.await()
+                }
 
                 val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
                     try {
