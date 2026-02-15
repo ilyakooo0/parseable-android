@@ -12,6 +12,8 @@ import com.parseable.android.ui.screens.logviewer.LogViewerScreen
 import com.parseable.android.ui.screens.logviewer.StreamInfoScreen
 import com.parseable.android.ui.screens.settings.SettingsScreen
 import com.parseable.android.ui.screens.streams.StreamsScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 object Routes {
     const val LOGIN = "login"
@@ -21,8 +23,10 @@ object Routes {
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
 
-    fun logViewer(streamName: String) = "log_viewer/$streamName"
-    fun streamInfo(streamName: String) = "stream_info/$streamName"
+    fun logViewer(streamName: String) =
+        "log_viewer/${URLEncoder.encode(streamName, "UTF-8")}"
+    fun streamInfo(streamName: String) =
+        "stream_info/${URLEncoder.encode(streamName, "UTF-8")}"
 }
 
 @Composable
@@ -73,7 +77,9 @@ fun ParseableNavGraph(
             route = Routes.LOG_VIEWER,
             arguments = listOf(navArgument("streamName") { type = NavType.StringType }),
         ) { backStackEntry ->
-            val streamName = backStackEntry.arguments?.getString("streamName") ?: ""
+            val streamName = URLDecoder.decode(
+                backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
+            )
             LogViewerScreen(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },
@@ -89,7 +95,9 @@ fun ParseableNavGraph(
             route = Routes.STREAM_INFO,
             arguments = listOf(navArgument("streamName") { type = NavType.StringType }),
         ) { backStackEntry ->
-            val streamName = backStackEntry.arguments?.getString("streamName") ?: ""
+            val streamName = URLDecoder.decode(
+                backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
+            )
             StreamInfoScreen(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },

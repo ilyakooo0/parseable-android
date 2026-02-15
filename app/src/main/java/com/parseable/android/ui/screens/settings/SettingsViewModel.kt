@@ -24,6 +24,7 @@ data class SettingsState(
     val aboutInfo: AboutInfo? = null,
     val users: List<String> = emptyList(),
     val isLoading: Boolean = false,
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -65,11 +66,17 @@ class SettingsViewModel @Inject constructor(
                     ?: obj["username"]?.jsonPrimitive?.content
             } ?: emptyList()
 
+            val errors = listOfNotNull(
+                (aboutResult as? ApiResult.Error)?.userMessage,
+                (usersResult as? ApiResult.Error)?.userMessage,
+            ).distinct().joinToString("\n").ifEmpty { null }
+
             _state.update {
                 it.copy(
                     aboutInfo = (aboutResult as? ApiResult.Success)?.data ?: it.aboutInfo,
                     users = userNames.ifEmpty { it.users },
                     isLoading = false,
+                    error = errors,
                 )
             }
         }

@@ -121,8 +121,21 @@ class LoginViewModel @Inject constructor(
 
             when (val result = repository.testConnection()) {
                 is ApiResult.Success -> {
-                    settingsRepository.saveServerConfig(config)
-                    _state.update { it.copy(isLoading = false, loginSuccess = true) }
+                    // Verify this is actually a Parseable server by fetching /about
+                    when (val aboutResult = repository.getAbout()) {
+                        is ApiResult.Success -> {
+                            settingsRepository.saveServerConfig(config)
+                            _state.update { it.copy(isLoading = false, loginSuccess = true) }
+                        }
+                        is ApiResult.Error -> {
+                            _state.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = "Server responded but doesn't appear to be Parseable: ${aboutResult.userMessage}",
+                                )
+                            }
+                        }
+                    }
                 }
                 is ApiResult.Error -> {
                     _state.update {

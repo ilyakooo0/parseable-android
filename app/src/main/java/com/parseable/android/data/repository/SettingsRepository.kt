@@ -2,6 +2,7 @@ package com.parseable.android.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
@@ -11,6 +12,7 @@ import com.parseable.android.data.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -39,35 +41,53 @@ class SettingsRepository @Inject constructor(
         )
     }
 
-    val serverConfig: Flow<ServerConfig?> = context.dataStore.data.map { prefs ->
-        val url = prefs[serverUrlKey] ?: return@map null
-        val user = prefs[usernameKey] ?: return@map null
-        val pass = withContext(Dispatchers.IO) {
-            encryptedPrefs.getString("password", null)
-        } ?: return@map null
-        ServerConfig(
-            serverUrl = url,
-            username = user,
-            password = pass,
-            useTls = prefs[useTlsKey] ?: true,
-        )
-    }
+    val serverConfig: Flow<ServerConfig?> = context.dataStore.data
+        .catch { e ->
+            Log.e("SettingsRepository", "Failed to read DataStore", e)
+            emit(emptyPreferences())
+        }
+        .map { prefs ->
+            val url = prefs[serverUrlKey] ?: return@map null
+            val user = prefs[usernameKey] ?: return@map null
+            val pass = try {
+                withContext(Dispatchers.IO) {
+                    encryptedPrefs.getString("password", null)
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsRepository", "Failed to read encrypted password", e)
+                null
+            } ?: return@map null
+            ServerConfig(
+                serverUrl = url,
+                username = user,
+                password = pass,
+                useTls = prefs[useTlsKey] ?: true,
+            )
+        }
 
     suspend fun saveServerConfig(config: ServerConfig) {
-        context.dataStore.edit { prefs ->
-            prefs[serverUrlKey] = config.serverUrl
-            prefs[usernameKey] = config.username
-            prefs[useTlsKey] = config.useTls
-        }
-        withContext(Dispatchers.IO) {
-            encryptedPrefs.edit().putString("password", config.password).apply()
+        try {
+            context.dataStore.edit { prefs ->
+                prefs[serverUrlKey] = config.serverUrl
+                prefs[usernameKey] = config.username
+                prefs[useTlsKey] = config.useTls
+            }
+            withContext(Dispatchers.IO) {
+                encryptedPrefs.edit().putString("password", config.password).apply()
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsRepository", "Failed to save server config", e)
         }
     }
 
     suspend fun clearConfig() {
-        context.dataStore.edit { it.clear() }
-        withContext(Dispatchers.IO) {
-            encryptedPrefs.edit().clear().apply()
+        try {
+            context.dataStore.edit { it.clear() }
+            withContext(Dispatchers.IO) {
+                encryptedPrefs.edit().clear().apply()
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsRepository", "Failed to clear config", e)
         }
     }
 }

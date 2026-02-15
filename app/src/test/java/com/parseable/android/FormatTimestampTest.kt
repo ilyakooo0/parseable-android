@@ -1,9 +1,8 @@
 package com.parseable.android
 
-import com.parseable.android.ui.screens.logviewer.formatTimestamp
+import com.parseable.android.data.formatTimestamp
 import org.junit.Assert.*
 import org.junit.Test
-import java.time.ZoneId
 import java.util.TimeZone
 
 class FormatTimestampTest {

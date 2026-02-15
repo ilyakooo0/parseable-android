@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
+import com.parseable.android.data.formatTimestamp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -41,6 +42,7 @@ fun LogViewerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSqlSheet by remember { mutableStateOf(false) }
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
@@ -51,6 +53,7 @@ fun LogViewerScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -297,6 +300,16 @@ fun LogViewerScreen(
                         }
                     }
                 } else if (state.logs.isEmpty() && !state.isLoading) {
+                    val emptyMessage = when {
+                        state.searchQuery.isNotBlank() && state.activeFilters.isNotEmpty() ->
+                            "No logs match \"${state.searchQuery}\" with the active filters"
+                        state.searchQuery.isNotBlank() ->
+                            "No logs match \"${state.searchQuery}\""
+                        state.activeFilters.isNotEmpty() ->
+                            "No logs match the active filters"
+                        else ->
+                            "No logs found for the selected time range"
+                    }
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
@@ -310,9 +323,10 @@ fun LogViewerScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No logs found for the selected time range",
+                                text = emptyMessage,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 32.dp),
                             )
                         }
                     }
@@ -347,6 +361,14 @@ fun LogViewerScreen(
                                 isExpanded = expandedLogKey == key,
                                 onClick = {
                                     expandedLogKey = if (expandedLogKey == key) null else key
+                                },
+                                onCopied = {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Log entry copied to clipboard",
+                                            duration = SnackbarDuration.Short,
+                                        )
+                                    }
                                 },
                             )
                         }
@@ -500,29 +522,12 @@ private fun StreamingToggleButton(
     }
 }
 
-internal fun formatTimestamp(raw: String): String {
-    return try {
-        val instant = java.time.Instant.parse(raw)
-        val local = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
-        local.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS"))
-    } catch (_: Exception) {
-        // Try alternate format with +00:00 suffix
-        try {
-            val normalized = raw.replace("+00:00", "Z")
-            val instant = java.time.Instant.parse(normalized)
-            val local = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
-            local.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS"))
-        } catch (_: Exception) {
-            raw
-        }
-    }
-}
-
 @Composable
 fun LogEntryCard(
     logEntry: JsonObject,
     isExpanded: Boolean,
     onClick: () -> Unit,
+    onCopied: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboardManager = remember {
@@ -587,6 +592,7 @@ fun LogEntryCard(
                             clipboardManager.setPrimaryClip(
                                 android.content.ClipData.newPlainText("Log entry", text)
                             )
+                            onCopied()
                         },
                         modifier = Modifier.size(32.dp),
                     ) {

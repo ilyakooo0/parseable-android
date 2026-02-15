@@ -2,6 +2,7 @@ package com.parseable.android.ui.screens.logviewer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parseable.android.data.escapeSql
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -71,9 +72,6 @@ class LogViewerViewModel @Inject constructor(
     companion object {
         private const val STREAMING_INTERVAL_MS = 3000L
         private const val STREAMING_MAX_LOGS = 1000
-
-        /** Escape single quotes in user input to prevent SQL injection. */
-        fun escapeSql(value: String): String = value.replace("'", "''")
     }
 
     fun initialize(streamName: String) {
