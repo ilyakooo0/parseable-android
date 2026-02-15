@@ -557,9 +557,7 @@ fun LogEntryCard(
         context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     }
     val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    val cardColors = remember(containerColor) {
-        CardDefaults.cardColors(containerColor = containerColor)
-    }
+    val cardColors = CardDefaults.cardColors(containerColor = containerColor)
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
