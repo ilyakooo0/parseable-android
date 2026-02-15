@@ -1,5 +1,7 @@
 package com.parseable.android.ui.screens.logviewer
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +16,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,9 +55,17 @@ fun LogViewerScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "${state.logs.size} results",
+                            text = if (state.isStreaming) {
+                                "Live - ${state.logs.size} logs (+${state.streamingNewCount} new)"
+                            } else {
+                                "${state.logs.size} results"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (state.isStreaming) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 },
@@ -64,6 +75,10 @@ fun LogViewerScreen(
                     }
                 },
                 actions = {
+                    StreamingToggleButton(
+                        isStreaming = state.isStreaming,
+                        onClick = viewModel::toggleStreaming,
+                    )
                     IconButton(onClick = { onStreamInfo(streamName) }) {
                         Icon(Icons.Filled.Info, contentDescription = "Stream Info")
                     }
@@ -132,6 +147,48 @@ fun LogViewerScreen(
                     }
                     TextButton(onClick = viewModel::clearFilters) {
                         Text("Clear all")
+                    }
+                }
+            }
+
+            // Streaming indicator banner
+            AnimatedVisibility(visible = state.isStreaming) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 1f,
+                            targetValue = 0.3f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(800, easing = EaseInOut),
+                                repeatMode = RepeatMode.Reverse,
+                            ),
+                            label = "pulse_alpha",
+                        )
+                        Icon(
+                            Icons.Filled.FiberManualRecord,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .size(12.dp)
+                                .alpha(alpha),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Live tail active - polling every 3s",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = viewModel::stopStreaming) {
+                            Text("Stop")
+                        }
                     }
                 }
             }
@@ -271,6 +328,39 @@ private fun TimeRangeBar(
                 selected = selectedRange == range,
                 onClick = { onRangeSelected(range) },
                 label = { Text(range.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StreamingToggleButton(
+    isStreaming: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick) {
+        if (isStreaming) {
+            val infiniteTransition = rememberInfiniteTransition(label = "stream_pulse")
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = 0.3f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, easing = EaseInOut),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "stream_btn_alpha",
+            )
+            Icon(
+                Icons.Filled.Stop,
+                contentDescription = "Stop streaming",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.alpha(alpha),
+            )
+        } else {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = "Start live tail",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
     }

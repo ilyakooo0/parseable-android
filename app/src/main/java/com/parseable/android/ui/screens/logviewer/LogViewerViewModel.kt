@@ -5,13 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
-import java.time.Instant
+import kotlinx.serialization.json.jsonPrimitive
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -41,6 +44,8 @@ data class LogViewerState(
     val customSql: String = "",
     val currentLimit: Int = 500,
     val hasMore: Boolean = false,
+    val isStreaming: Boolean = false,
+    val streamingNewCount: Int = 0,
 )
 
 @HiltViewModel
@@ -52,6 +57,14 @@ class LogViewerViewModel @Inject constructor(
     val state: StateFlow<LogViewerState> = _state.asStateFlow()
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+00:00'")
+
+    private var streamingJob: Job? = null
+    private var lastSeenTimestamp: String? = null
+
+    companion object {
+        private const val STREAMING_INTERVAL_MS = 3000L
+        private const val STREAMING_MAX_LOGS = 5000
+    }
 
     fun initialize(streamName: String) {
         if (_state.value.streamName == streamName) return
@@ -73,6 +86,7 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun onTimeRangeChange(range: TimeRange) {
+        stopStreaming()
         _state.update { it.copy(selectedTimeRange = range, currentLimit = 500) }
         refresh()
     }
@@ -244,5 +258,92 @@ class LogViewerViewModel @Inject constructor(
             start.format(dateFormatter),
             now.format(dateFormatter),
         )
+    }
+
+    fun toggleStreaming() {
+        if (_state.value.isStreaming) {
+            stopStreaming()
+        } else {
+            startStreaming()
+        }
+    }
+
+    private fun startStreaming() {
+        stopStreaming()
+        _state.update { it.copy(isStreaming = true, streamingNewCount = 0) }
+
+        // Set the baseline timestamp to "now" so we only poll for new logs
+        lastSeenTimestamp = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
+
+        streamingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(STREAMING_INTERVAL_MS)
+                pollNewLogs()
+            }
+        }
+    }
+
+    fun stopStreaming() {
+        streamingJob?.cancel()
+        streamingJob = null
+        _state.update { it.copy(isStreaming = false, streamingNewCount = 0) }
+    }
+
+    private suspend fun pollNewLogs() {
+        val current = _state.value
+        if (current.streamName.isEmpty()) return
+
+        val startTime = lastSeenTimestamp ?: return
+        val endTime = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
+
+        // Build WHERE clause from active filters + search
+        val clauses = current.filterClauses.toMutableList()
+        if (current.searchQuery.isNotBlank()) {
+            val searchFields = current.columns.filter { !it.startsWith("p_") }.take(5)
+            if (searchFields.isNotEmpty()) {
+                clauses.add(
+                    searchFields.joinToString(" OR ") {
+                        "\"$it\" ILIKE '%${current.searchQuery}%'"
+                    }
+                )
+            }
+        }
+
+        val whereClause = if (clauses.isNotEmpty()) " WHERE ${clauses.joinToString(" AND ")}" else ""
+        val sql = "SELECT * FROM \"${current.streamName}\"$whereClause ORDER BY p_timestamp DESC LIMIT 200"
+
+        when (val result = repository.queryLogsRaw(sql, startTime, endTime)) {
+            is ApiResult.Success -> {
+                val newLogs = result.data
+                if (newLogs.isNotEmpty()) {
+                    // Update the last seen timestamp to the most recent log
+                    val newestTimestamp = newLogs.firstOrNull()
+                        ?.get("p_timestamp")?.jsonPrimitive?.content
+                    if (newestTimestamp != null) {
+                        lastSeenTimestamp = newestTimestamp
+                    }
+
+                    _state.update { state ->
+                        // Prepend new logs, cap total
+                        val combined = newLogs + state.logs
+                        val capped = if (combined.size > STREAMING_MAX_LOGS) {
+                            combined.take(STREAMING_MAX_LOGS)
+                        } else {
+                            combined
+                        }
+                        state.copy(
+                            logs = capped,
+                            streamingNewCount = state.streamingNewCount + newLogs.size,
+                        )
+                    }
+                }
+            }
+            is ApiResult.Error -> { /* Silently skip poll errors during streaming */ }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopStreaming()
     }
 }
