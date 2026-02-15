@@ -301,6 +301,13 @@ fun LogViewerScreen(
                             }
                         }
                     }
+                } else if (state.logs.isEmpty() && state.isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 } else if (state.logs.isEmpty() && !state.isLoading) {
                     val emptyMessage = when {
                         state.isStreaming ->
@@ -365,9 +372,9 @@ fun LogViewerScreen(
                     ) {
                         itemsIndexed(
                             state.logs,
-                            key = { index, _ -> logKeys[index] },
+                            key = { index, _ -> logKeys.getOrElse(index) { "log_$index" } },
                         ) { index, logEntry ->
-                            val key = logKeys[index]
+                            val key = logKeys.getOrElse(index) { "log_$index" }
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
