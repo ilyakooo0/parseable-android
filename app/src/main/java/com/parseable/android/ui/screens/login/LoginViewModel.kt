@@ -26,6 +26,7 @@ data class LoginState(
     val serverUrlError: String? = null,
     val usernameError: String? = null,
     val passwordError: String? = null,
+    val hasSavedCredentials: Boolean = false,
 )
 
 @HiltViewModel
@@ -45,12 +46,20 @@ class LoginViewModel @Inject constructor(
                         it.copy(
                             serverUrl = config.serverUrl,
                             username = config.username,
-                            password = config.password,
                             allowInsecure = !config.useTls,
+                            hasSavedCredentials = true,
                         )
                     }
                 }
             }
+        }
+    }
+
+    fun loginWithSavedCredentials() {
+        viewModelScope.launch {
+            val config = settingsRepository.getSavedPassword() ?: return@launch
+            _state.update { it.copy(password = config.password) }
+            onLogin()
         }
     }
 

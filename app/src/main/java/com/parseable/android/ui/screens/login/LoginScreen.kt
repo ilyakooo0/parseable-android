@@ -190,6 +190,19 @@ fun LoginScreen(
                 Text("Connect")
             }
 
+            if (state.hasSavedCredentials && state.password.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = viewModel::loginWithSavedCredentials,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    enabled = !state.isLoading,
+                ) {
+                    Text("Use saved credentials")
+                }
+            }
+
             if (state.error != null) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Card(

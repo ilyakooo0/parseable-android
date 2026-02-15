@@ -1,6 +1,7 @@
 package com.parseable.android
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,6 +15,8 @@ import androidx.navigation.compose.rememberNavController
 import com.parseable.android.data.model.ServerConfig
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
+import com.parseable.android.ui.ErrorHandler
+import com.parseable.android.ui.GlobalErrorBoundary
 import com.parseable.android.ui.navigation.ParseableNavGraph
 import com.parseable.android.ui.navigation.Routes
 import com.parseable.android.ui.theme.ParseableTheme
@@ -32,50 +35,69 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var repository: ParseableRepository
 
+    private val errorHandler = ErrorHandler()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        installUncaughtExceptionHandler()
 
         setContent {
             ParseableTheme {
-                var startDestination by remember { mutableStateOf<String?>(null) }
+                GlobalErrorBoundary(errorHandler = errorHandler) {
+                    var startDestination by remember { mutableStateOf<String?>(null) }
 
-                LaunchedEffect(Unit) {
-                    val savedConfig: ServerConfig? = settingsRepository.serverConfig.first()
-                    if (savedConfig != null) {
-                        repository.configure(savedConfig)
+                    LaunchedEffect(Unit) {
+                        val savedConfig: ServerConfig? = settingsRepository.serverConfig.first()
+                        if (savedConfig != null) {
+                            repository.configure(savedConfig)
+                        }
+                        startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
                     }
-                    startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
-                }
 
-                if (startDestination != null) {
-                    val navController = rememberNavController()
+                    if (startDestination != null) {
+                        val navController = rememberNavController()
 
-                    // Navigate to login on 401 auth errors
-                    LaunchedEffect(navController) {
-                        repository.authErrors
-                            .onEach {
-                                settingsRepository.clearConfig()
-                                navController.navigate(Routes.login(sessionExpired = true)) {
-                                    popUpTo(0) { inclusive = true }
+                        // Navigate to login on 401 auth errors
+                        LaunchedEffect(navController) {
+                            repository.authErrors
+                                .onEach {
+                                    settingsRepository.clearConfig()
+                                    navController.navigate(Routes.login(sessionExpired = true)) {
+                                        popUpTo(0) { inclusive = true }
+                                    }
                                 }
-                            }
-                            .launchIn(this)
-                    }
+                                .launchIn(this)
+                        }
 
-                    ParseableNavGraph(
-                        navController = navController,
-                        startDestination = startDestination!!,
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
+                        ParseableNavGraph(
+                            navController = navController,
+                            startDestination = startDestination!!,
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
             }
         }
+    }
+
+    private fun installUncaughtExceptionHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Log.e(TAG, "Uncaught exception on thread ${thread.name}", throwable)
+            // For truly fatal errors (e.g. OOM), delegate to the default handler
+            // so the system can still terminate the process when necessary.
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    companion object {
+        private const val TAG = "ParseableApp"
     }
 }

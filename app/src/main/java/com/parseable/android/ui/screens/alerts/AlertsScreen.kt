@@ -99,16 +99,44 @@ fun AlertsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.alerts, key = { it.id ?: it.name ?: it.hashCode() }) { alert ->
-                        AlertCard(alert)
+                        AlertCard(
+                            alert = alert,
+                            onDelete = { viewModel.requestDelete(alert) },
+                        )
                     }
                 }
             }
         }
     }
+
+    state.alertToDelete?.let { alert ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelDelete,
+            title = { Text("Delete Alert") },
+            text = {
+                Text("Are you sure you want to delete \"${alert.name ?: "this alert"}\"? This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { alert.id?.let { viewModel.deleteAlert(it) } },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelDelete) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun AlertCard(alert: Alert) {
+private fun AlertCard(alert: Alert, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
@@ -122,7 +150,10 @@ private fun AlertCard(alert: Alert) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
                     Icon(
                         if (alert.enabled == true) Icons.Filled.NotificationsActive
                         else Icons.Filled.NotificationsOff,
@@ -141,16 +172,25 @@ private fun AlertCard(alert: Alert) {
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
-                if (alert.enabled != null) {
-                    Text(
-                        text = if (alert.enabled) "Enabled" else "Disabled",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (alert.enabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (alert.enabled != null) {
+                        Text(
+                            text = if (alert.enabled) "Enabled" else "Disabled",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (alert.enabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete alert",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 

@@ -134,5 +134,11 @@ class ParseableRepository @Inject constructor(
 
     suspend fun listAlerts(): ApiResult<List<Alert>> = checkAuth(apiClient.listAlerts())
 
+    suspend fun deleteAlert(alertId: String): ApiResult<String> =
+        checkAuth(apiClient.deleteAlert(alertId))
+
+    suspend fun createAlert(alert: Alert): ApiResult<Alert> =
+        checkAuth(apiClient.createAlert(alert))
+
     suspend fun listUsers(): ApiResult<List<JsonObject>> = checkAuth(apiClient.listUsers())
 }

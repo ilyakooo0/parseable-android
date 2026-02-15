@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.parseable.android.ui.screens.alerts.AlertsScreen
 import com.parseable.android.ui.screens.login.LoginScreen
 import com.parseable.android.ui.screens.logviewer.LogViewerScreen
@@ -58,7 +59,10 @@ fun ParseableNavGraph(
             )
         }
 
-        composable(Routes.STREAMS) {
+        composable(
+            route = Routes.STREAMS,
+            deepLinks = listOf(navDeepLink { uriPattern = "parseable://streams" }),
+        ) {
             StreamsScreen(
                 onStreamClick = { streamName ->
                     navController.navigate(Routes.logViewer(streamName)) {
@@ -86,6 +90,7 @@ fun ParseableNavGraph(
         composable(
             route = Routes.LOG_VIEWER,
             arguments = listOf(navArgument("streamName") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "parseable://stream/{streamName}" }),
         ) { backStackEntry ->
             val streamName = URLDecoder.decode(
                 backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
@@ -117,7 +122,10 @@ fun ParseableNavGraph(
             )
         }
 
-        composable(Routes.ALERTS) {
+        composable(
+            route = Routes.ALERTS,
+            deepLinks = listOf(navDeepLink { uriPattern = "parseable://alerts" }),
+        ) {
             AlertsScreen(
                 onBack = { navController.popBackStack() },
             )

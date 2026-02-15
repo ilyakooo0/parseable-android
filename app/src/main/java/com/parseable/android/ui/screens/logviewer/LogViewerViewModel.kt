@@ -34,6 +34,19 @@ enum class TimeRange(val label: String, val minutes: Long) {
     CUSTOM("Custom", 0),
 }
 
+data class FilterState(
+    val searchQuery: String = "",
+    val activeFilters: List<String> = emptyList(),
+    val filterClauses: List<String> = emptyList(),
+    val customSql: String = "",
+)
+
+data class StreamingState(
+    val isStreaming: Boolean = false,
+    val streamingNewCount: Int = 0,
+    val streamingError: String? = null,
+)
+
 data class LogViewerState(
     val streamName: String = "",
     val logs: List<JsonObject> = emptyList(),
@@ -41,18 +54,22 @@ data class LogViewerState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectedTimeRange: TimeRange = TimeRange.LAST_1H,
-    val searchQuery: String = "",
-    val activeFilters: List<String> = emptyList(),
-    val filterClauses: List<String> = emptyList(),
-    val customSql: String = "",
+    val filters: FilterState = FilterState(),
+    val streaming: StreamingState = StreamingState(),
     val currentLimit: Int = 500,
     val hasMore: Boolean = false,
-    val isStreaming: Boolean = false,
-    val streamingNewCount: Int = 0,
-    val streamingError: String? = null,
     val customStartTime: Long? = null,
     val customEndTime: Long? = null,
-)
+) {
+    // Convenience accessors for backward compatibility with Screen
+    val searchQuery: String get() = filters.searchQuery
+    val activeFilters: List<String> get() = filters.activeFilters
+    val filterClauses: List<String> get() = filters.filterClauses
+    val customSql: String get() = filters.customSql
+    val isStreaming: Boolean get() = streaming.isStreaming
+    val streamingNewCount: Int get() = streaming.streamingNewCount
+    val streamingError: String? get() = streaming.streamingError
+}
 
 @HiltViewModel
 class LogViewerViewModel @Inject constructor(
@@ -71,8 +88,12 @@ class LogViewerViewModel @Inject constructor(
     private var searchJob: Job? = null
 
     companion object {
-        private const val STREAMING_INTERVAL_MS = 3000L
+        private const val STREAMING_BASE_INTERVAL_MS = 3000L
+        private const val STREAMING_MAX_INTERVAL_MS = 30000L
         private const val STREAMING_MAX_LOGS = 1000
+        private const val MAX_LOAD_LIMIT = 5000
+        private const val LOAD_MORE_INCREMENT = 500
+        private const val MAX_STREAMING_ERRORS = 5
     }
 
     fun initialize(streamName: String) {
@@ -122,7 +143,7 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun onSearchQueryChange(query: String) {
-        _state.update { it.copy(searchQuery = query) }
+        _state.update { it.copy(filters = it.filters.copy(searchQuery = query)) }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300)
@@ -131,11 +152,12 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun addFilter(column: String, operator: String, value: String) {
+        val safeColumn = escapeIdentifier(column)
         val safeValue = escapeSql(value)
         val clause = when (operator) {
-            "IS NULL", "IS NOT NULL" -> "\"$column\" $operator"
-            "LIKE", "ILIKE" -> "\"$column\" $operator '%$safeValue%'"
-            else -> "\"$column\" $operator '$safeValue'"
+            "IS NULL", "IS NOT NULL" -> "\"$safeColumn\" $operator"
+            "LIKE", "ILIKE" -> "\"$safeColumn\" $operator '%$safeValue%'"
+            else -> "\"$safeColumn\" $operator '$safeValue'"
         }
         val display = when (operator) {
             "IS NULL", "IS NOT NULL" -> "$column $operator"
@@ -143,20 +165,24 @@ class LogViewerViewModel @Inject constructor(
         }
         _state.update {
             it.copy(
-                filterClauses = it.filterClauses + clause,
-                activeFilters = it.activeFilters + display,
+                filters = it.filters.copy(
+                    filterClauses = it.filters.filterClauses + clause,
+                    activeFilters = it.filters.activeFilters + display,
+                ),
             )
         }
         refresh()
     }
 
     fun removeFilter(display: String) {
-        val index = _state.value.activeFilters.indexOf(display)
+        val index = _state.value.filters.activeFilters.indexOf(display)
         if (index >= 0) {
             _state.update {
                 it.copy(
-                    activeFilters = it.activeFilters.toMutableList().apply { removeAt(index) },
-                    filterClauses = it.filterClauses.toMutableList().apply { removeAt(index) },
+                    filters = it.filters.copy(
+                        activeFilters = it.filters.activeFilters.toMutableList().apply { removeAt(index) },
+                        filterClauses = it.filters.filterClauses.toMutableList().apply { removeAt(index) },
+                    ),
                 )
             }
             refresh()
@@ -164,12 +190,14 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun clearFilters() {
-        _state.update { it.copy(activeFilters = emptyList(), filterClauses = emptyList()) }
+        _state.update {
+            it.copy(filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList()))
+        }
         refresh()
     }
 
     fun executeCustomSql(sql: String) {
-        _state.update { it.copy(customSql = sql) }
+        _state.update { it.copy(filters = it.filters.copy(customSql = sql)) }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
@@ -193,6 +221,17 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
+    private fun buildSearchClause(columns: List<String>, searchQuery: String): String? {
+        if (searchQuery.isBlank()) return null
+        val safeSearch = escapeSql(searchQuery)
+        // Search across ALL non-internal columns (not just 5)
+        val searchFields = columns.filter { !it.startsWith("p_") }
+        if (searchFields.isEmpty()) return null
+        return searchFields.joinToString(" OR ") {
+            "\"${escapeIdentifier(it)}\" ILIKE '%$safeSearch%'"
+        }
+    }
+
     fun refresh() {
         val current = _state.value
         if (current.streamName.isEmpty()) return
@@ -203,17 +242,10 @@ class LogViewerViewModel @Inject constructor(
             val (startTime, endTime) = getTimeRange()
 
             // Build WHERE clause from filters + search
-            val clauses = current.filterClauses.toMutableList()
-            if (current.searchQuery.isNotBlank()) {
-                val safeSearch = escapeSql(current.searchQuery)
-                // Search across non-internal columns by name
-                val searchFields = current.columns
-                    .filter { !it.startsWith("p_") }
-                    .take(5)
-                if (searchFields.isNotEmpty()) {
-                    val searchClause = searchFields.joinToString(" OR ") {
-                        "\"$it\" ILIKE '%$safeSearch%'"
-                    }
+            val clauses = current.filters.filterClauses.toMutableList()
+            if (current.filters.searchQuery.isNotBlank()) {
+                val searchClause = buildSearchClause(current.columns, current.filters.searchQuery)
+                if (searchClause != null) {
                     clauses.add("($searchClause)")
                 } else {
                     _state.update {
@@ -251,7 +283,13 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun loadMore() {
-        _state.update { it.copy(currentLimit = it.currentLimit + 500) }
+        val current = _state.value
+        if (current.currentLimit >= MAX_LOAD_LIMIT) {
+            _state.update { it.copy(hasMore = false) }
+            return
+        }
+        val newLimit = (current.currentLimit + LOAD_MORE_INCREMENT).coerceAtMost(MAX_LOAD_LIMIT)
+        _state.update { it.copy(currentLimit = newLimit) }
         refresh()
     }
 
@@ -277,7 +315,7 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun toggleStreaming() {
-        if (_state.value.isStreaming) {
+        if (_state.value.streaming.isStreaming) {
             stopStreaming()
         } else {
             startStreaming()
@@ -288,7 +326,9 @@ class LogViewerViewModel @Inject constructor(
         stopStreaming()
         consecutiveStreamingErrors = 0
         val generation = ++streamingGeneration
-        _state.update { it.copy(isStreaming = true, streamingNewCount = 0, streamingError = null) }
+        _state.update {
+            it.copy(streaming = StreamingState(isStreaming = true, streamingNewCount = 0))
+        }
 
         // Set the baseline timestamp to "now" so we only poll for new logs
         lastSeenTimestamp = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
@@ -296,7 +336,14 @@ class LogViewerViewModel @Inject constructor(
         streamingJob = viewModelScope.launch {
             while (isActive && streamingGeneration == generation) {
                 pollNewLogs()
-                delay(STREAMING_INTERVAL_MS)
+                // Exponential backoff on errors, normal interval on success
+                val intervalMs = if (consecutiveStreamingErrors > 0) {
+                    (STREAMING_BASE_INTERVAL_MS * (1L shl consecutiveStreamingErrors.coerceAtMost(4)))
+                        .coerceAtMost(STREAMING_MAX_INTERVAL_MS)
+                } else {
+                    STREAMING_BASE_INTERVAL_MS
+                }
+                delay(intervalMs)
             }
         }
     }
@@ -305,7 +352,9 @@ class LogViewerViewModel @Inject constructor(
         streamingGeneration++
         streamingJob?.cancel()
         streamingJob = null
-        _state.update { it.copy(isStreaming = false, streamingNewCount = 0, streamingError = null) }
+        _state.update {
+            it.copy(streaming = StreamingState())
+        }
     }
 
     private suspend fun pollNewLogs() {
@@ -316,16 +365,11 @@ class LogViewerViewModel @Inject constructor(
         val endTime = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
 
         // Build WHERE clause from active filters + search
-        val clauses = current.filterClauses.toMutableList()
-        if (current.searchQuery.isNotBlank()) {
-            val safeSearch = escapeSql(current.searchQuery)
-            val searchFields = current.columns.filter { !it.startsWith("p_") }.take(5)
-            if (searchFields.isNotEmpty()) {
-                clauses.add(
-                    searchFields.joinToString(" OR ") {
-                        "\"$it\" ILIKE '%$safeSearch%'"
-                    }
-                )
+        val clauses = current.filters.filterClauses.toMutableList()
+        if (current.filters.searchQuery.isNotBlank()) {
+            val searchClause = buildSearchClause(current.columns, current.filters.searchQuery)
+            if (searchClause != null) {
+                clauses.add(searchClause)
             }
         }
 
@@ -358,8 +402,10 @@ class LogViewerViewModel @Inject constructor(
                         }
                         state.copy(
                             logs = capped,
-                            streamingNewCount = state.streamingNewCount + newLogs.size,
-                            streamingError = null,
+                            streaming = state.streaming.copy(
+                                streamingNewCount = state.streaming.streamingNewCount + newLogs.size,
+                                streamingError = null,
+                            ),
                         )
                     }
                 }
@@ -367,9 +413,18 @@ class LogViewerViewModel @Inject constructor(
             }
             is ApiResult.Error -> {
                 consecutiveStreamingErrors++
-                if (consecutiveStreamingErrors >= 3) {
+                if (consecutiveStreamingErrors >= MAX_STREAMING_ERRORS) {
+                    stopStreaming()
                     _state.update {
-                        it.copy(streamingError = "Streaming interrupted: ${result.userMessage}")
+                        it.copy(error = "Streaming stopped after repeated errors: ${result.userMessage}")
+                    }
+                } else if (consecutiveStreamingErrors >= 3) {
+                    _state.update {
+                        it.copy(
+                            streaming = it.streaming.copy(
+                                streamingError = "Streaming interrupted: ${result.userMessage}. Retrying..."
+                            ),
+                        )
                     }
                 }
             }

@@ -80,7 +80,7 @@ class StreamsViewModel @Inject constructor(
         }
     }
 
-    private val statsSemaphore = Semaphore(4)
+    private val statsSemaphore = Semaphore(8)
 
     private fun loadStreamStats(streams: List<LogStream>) {
         streams.forEach { stream ->

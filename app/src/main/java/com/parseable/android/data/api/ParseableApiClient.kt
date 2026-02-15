@@ -1,20 +1,25 @@
 package com.parseable.android.data.api
 
+import android.util.Log
 import com.parseable.android.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import java.net.UnknownHostException
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLException
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
@@ -103,12 +108,29 @@ class ParseableApiClient @Inject constructor() {
                         code = response.code
                     )
                 }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Error(message = "Connection timed out")
+            } catch (e: UnknownHostException) {
+                ApiResult.Error(message = "Unable to resolve host \"${e.message}\"")
+            } catch (e: SSLException) {
+                ApiResult.Error(message = "SSL error: ${e.message}. Check server certificate.")
             } catch (e: IOException) {
                 ApiResult.Error(message = e.message ?: "Network error")
             } catch (e: Exception) {
-                ApiResult.Error(message = e.message ?: "Unknown error")
+                Log.e("ParseableApiClient", "Unexpected error", e)
+                ApiResult.Error(message = "Unexpected error: ${e.javaClass.simpleName}")
             }
         }
+
+    private fun <T> parseResponse(body: String, description: String, parse: () -> T): ApiResult<T> {
+        return try {
+            ApiResult.Success(parse())
+        } catch (e: SerializationException) {
+            ApiResult.Error("Invalid response format from server")
+        } catch (e: IllegalArgumentException) {
+            ApiResult.Error("Unexpected response format for $description")
+        }
+    }
 
     /**
      * GET /api/v1/about
@@ -116,12 +138,8 @@ class ParseableApiClient @Inject constructor() {
     suspend fun getAbout(): ApiResult<AboutInfo> {
         val request = buildRequest("/api/v1/about").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    ApiResult.Success(json.decodeFromString<AboutInfo>(result.data))
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse about info: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "about info") {
+                json.decodeFromString<AboutInfo>(result.data)
             }
             is ApiResult.Error -> result
         }
@@ -175,12 +193,8 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/schema").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    ApiResult.Success(json.decodeFromString<StreamSchema>(result.data))
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse schema: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "schema") {
+                json.decodeFromString<StreamSchema>(result.data)
             }
             is ApiResult.Error -> result
         }
@@ -193,12 +207,8 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/stats").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    ApiResult.Success(json.decodeFromString<StreamStats>(result.data))
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse stats: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "stats") {
+                json.decodeFromString<StreamStats>(result.data)
             }
             is ApiResult.Error -> result
         }
@@ -211,12 +221,8 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/info").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    ApiResult.Success(json.parseToJsonElement(result.data).jsonObject)
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse stream info: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "stream info") {
+                json.parseToJsonElement(result.data).jsonObject
             }
             is ApiResult.Error -> result
         }
@@ -232,12 +238,9 @@ class ParseableApiClient @Inject constructor() {
             is ApiResult.Success -> {
                 try {
                     ApiResult.Success(json.decodeFromString<List<RetentionConfig>>(result.data))
-                } catch (e: Exception) {
-                    try {
-                        val single = json.decodeFromString<RetentionConfig>(result.data)
-                        ApiResult.Success(listOf(single))
-                    } catch (e2: Exception) {
-                        ApiResult.Error("Failed to parse retention config: ${e2.message}")
+                } catch (_: Exception) {
+                    parseResponse(result.data, "retention config") {
+                        listOf(json.decodeFromString<RetentionConfig>(result.data))
                     }
                 }
             }
@@ -267,14 +270,9 @@ class ParseableApiClient @Inject constructor() {
             .build()
 
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    val elements = json.parseToJsonElement(result.data).jsonArray
-                    val objects = elements.map { it.jsonObject }
-                    ApiResult.Success(objects)
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse query results: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "query results") {
+                val elements = json.parseToJsonElement(result.data).jsonArray
+                elements.map { it.jsonObject }
             }
             is ApiResult.Error -> result
         }
@@ -295,20 +293,40 @@ class ParseableApiClient @Inject constructor() {
     suspend fun listAlerts(): ApiResult<List<Alert>> {
         val request = buildRequest("/api/v1/alerts").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    // The response could be the alerts array directly or wrapped
-                    val element = json.parseToJsonElement(result.data)
-                    val alertsArray = when (element) {
-                        is JsonArray -> element
-                        is JsonObject -> element["alerts"]?.jsonArray ?: JsonArray(emptyList())
-                        else -> JsonArray(emptyList())
-                    }
-                    val alerts = alertsArray.map { json.decodeFromJsonElement<Alert>(it) }
-                    ApiResult.Success(alerts)
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse alerts: ${e.message}")
+            is ApiResult.Success -> parseResponse(result.data, "alerts") {
+                val element = json.parseToJsonElement(result.data)
+                val alertsArray = when (element) {
+                    is JsonArray -> element
+                    is JsonObject -> element["alerts"]?.jsonArray ?: JsonArray(emptyList())
+                    else -> JsonArray(emptyList())
                 }
+                alertsArray.map { json.decodeFromJsonElement<Alert>(it) }
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * DELETE /api/v1/alerts/{alertId}
+     */
+    suspend fun deleteAlert(alertId: String): ApiResult<String> {
+        val encoded = encodePathSegment(alertId)
+        val request = buildRequest("/api/v1/alerts/$encoded").delete().build()
+        return executeRequest(request)
+    }
+
+    /**
+     * POST /api/v1/alerts
+     */
+    suspend fun createAlert(alert: Alert): ApiResult<Alert> {
+        val requestBody = json.encodeToString(Alert.serializer(), alert)
+            .toRequestBody("application/json".toMediaType())
+        val request = buildRequest("/api/v1/alerts")
+            .post(requestBody)
+            .build()
+        return when (val result = executeRequest(request)) {
+            is ApiResult.Success -> parseResponse(result.data, "alert") {
+                json.decodeFromString<Alert>(result.data)
             }
             is ApiResult.Error -> result
         }
@@ -320,13 +338,9 @@ class ParseableApiClient @Inject constructor() {
     suspend fun listUsers(): ApiResult<List<JsonObject>> {
         val request = buildRequest("/api/v1/user").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> {
-                try {
-                    val elements = json.parseToJsonElement(result.data).jsonArray
-                    ApiResult.Success(elements.map { it.jsonObject })
-                } catch (e: Exception) {
-                    ApiResult.Error("Failed to parse users: ${e.message}")
-                }
+            is ApiResult.Success -> parseResponse(result.data, "users") {
+                val elements = json.parseToJsonElement(result.data).jsonArray
+                elements.map { it.jsonObject }
             }
             is ApiResult.Error -> result
         }

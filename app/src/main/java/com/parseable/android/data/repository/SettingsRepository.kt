@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -64,6 +65,8 @@ class SettingsRepository @Inject constructor(
                 useTls = prefs[useTlsKey] ?: true,
             )
         }
+
+    suspend fun getSavedPassword(): ServerConfig? = serverConfig.first()
 
     suspend fun saveServerConfig(config: ServerConfig) {
         try {

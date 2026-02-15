@@ -49,6 +49,7 @@ fun LogViewerScreen(
     var showSqlSheet by remember { mutableStateOf(false) }
     var expandedLogKey by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
+    var showShareWarning by remember { mutableStateOf(false) }
 
     LaunchedEffect(streamName) {
         viewModel.initialize(streamName)
@@ -101,49 +102,7 @@ fun LogViewerScreen(
                         Icon(Icons.Filled.Code, contentDescription = "SQL Query")
                     }
                     IconButton(
-                        onClick = {
-                            val logs = state.logs
-                            if (logs.isNotEmpty()) {
-                                scope.launch {
-                                    try {
-                                        val file = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            val dir = java.io.File(context.cacheDir, "shared_logs")
-                                            dir.mkdirs()
-                                            val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                                            val file = java.io.File(dir, "logs_$safeFileName.json")
-                                            file.bufferedWriter().use { writer ->
-                                                val prettyJson = Json { prettyPrint = true }
-                                                logs.forEachIndexed { index, log ->
-                                                    writer.write(prettyJson.encodeToString(JsonObject.serializer(), log))
-                                                    if (index < logs.lastIndex) writer.newLine()
-                                                }
-                                            }
-                                            file
-                                        }
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.fileprovider",
-                                            file,
-                                        )
-                                        val sendIntent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
-                                            type = "application/json"
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(
-                                            Intent.createChooser(sendIntent, "Share logs")
-                                        )
-                                    } catch (e: Exception) {
-                                        snackbarHostState.showSnackbar(
-                                            message = "Failed to share logs: ${e.message}",
-                                            duration = SnackbarDuration.Short,
-                                        )
-                                    }
-                                }
-                            }
-                        },
+                        onClick = { showShareWarning = true },
                         enabled = state.logs.isNotEmpty(),
                     ) {
                         Icon(Icons.Filled.Share, contentDescription = "Share logs")
@@ -438,6 +397,71 @@ fun LogViewerScreen(
             onExecute = { sql ->
                 viewModel.executeCustomSql(sql)
                 showSqlSheet = false
+            },
+        )
+    }
+
+    // Share confirmation dialog (logs may contain sensitive data)
+    if (showShareWarning) {
+        AlertDialog(
+            onDismissRequest = { showShareWarning = false },
+            title = { Text("Share Logs") },
+            text = {
+                Text("Logs may contain sensitive information (PII, secrets, tokens). " +
+                    "They will be exported as unencrypted JSON. Continue?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showShareWarning = false
+                    val logs = state.logs
+                    if (logs.isNotEmpty()) {
+                        scope.launch {
+                            try {
+                                val file = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    val dir = java.io.File(context.cacheDir, "shared_logs")
+                                    dir.mkdirs()
+                                    val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                    val file = java.io.File(dir, "logs_$safeFileName.json")
+                                    file.bufferedWriter().use { writer ->
+                                        val prettyJson = Json { prettyPrint = true }
+                                        logs.forEachIndexed { index, log ->
+                                            writer.write(prettyJson.encodeToString(JsonObject.serializer(), log))
+                                            if (index < logs.lastIndex) writer.newLine()
+                                        }
+                                    }
+                                    file
+                                }
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file,
+                                )
+                                val sendIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_SUBJECT, "Logs: $streamName")
+                                    type = "application/json"
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(sendIntent, "Share logs")
+                                )
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar(
+                                    message = "Failed to share logs: ${e.message}",
+                                    duration = SnackbarDuration.Short,
+                                )
+                            }
+                        }
+                    }
+                }) {
+                    Text("Share")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showShareWarning = false }) {
+                    Text("Cancel")
+                }
             },
         )
     }
@@ -767,14 +791,34 @@ fun FilterBottomSheet(
 
             // Value input (hidden for IS NULL / IS NOT NULL)
             if (selectedOperator !in listOf("IS NULL", "IS NOT NULL")) {
+                val valueHint = when (selectedOperator) {
+                    "LIKE", "ILIKE" -> "Pattern (% added automatically)"
+                    ">", "<", ">=", "<=" -> "Numeric or date value"
+                    else -> "Exact value"
+                }
+                val valueError = when {
+                    filterValue.isNotEmpty() && selectedOperator in listOf(">", "<", ">=", "<=") &&
+                        filterValue.toDoubleOrNull() == null &&
+                        !filterValue.matches(Regex("\\d{4}-\\d{2}-\\d{2}.*")) ->
+                        "Expected a number or date"
+                    else -> null
+                }
                 OutlinedTextField(
                     value = filterValue,
                     onValueChange = { filterValue = it },
                     label = { Text("Value") },
+                    placeholder = { Text(valueHint) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    isError = valueError != null,
+                    supportingText = valueError?.let { { Text(it) } },
                 )
             }
+
+            val hasValueError = selectedOperator in listOf(">", "<", ">=", "<=") &&
+                filterValue.isNotEmpty() &&
+                filterValue.toDoubleOrNull() == null &&
+                !filterValue.matches(Regex("\\d{4}-\\d{2}-\\d{2}.*"))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -792,6 +836,7 @@ fun FilterBottomSheet(
                         }
                     },
                     enabled = selectedColumn.isNotEmpty() &&
+                        !hasValueError &&
                         (selectedOperator in listOf("IS NULL", "IS NOT NULL") || filterValue.isNotEmpty()),
                 ) {
                     Text("Apply")

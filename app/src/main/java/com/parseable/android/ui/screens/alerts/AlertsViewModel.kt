@@ -17,6 +17,7 @@ data class AlertsState(
     val alerts: List<Alert> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    val alertToDelete: Alert? = null,
 )
 
 @HiltViewModel
@@ -34,6 +35,26 @@ class AlertsViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _state.update { it.copy(alerts = result.data, isLoading = false) }
                 }
+                is ApiResult.Error -> {
+                    _state.update { it.copy(isLoading = false, error = result.userMessage) }
+                }
+            }
+        }
+    }
+
+    fun requestDelete(alert: Alert) {
+        _state.update { it.copy(alertToDelete = alert) }
+    }
+
+    fun cancelDelete() {
+        _state.update { it.copy(alertToDelete = null) }
+    }
+
+    fun deleteAlert(alertId: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(alertToDelete = null, isLoading = true, error = null) }
+            when (val result = repository.deleteAlert(alertId)) {
+                is ApiResult.Success -> refresh()
                 is ApiResult.Error -> {
                     _state.update { it.copy(isLoading = false, error = result.userMessage) }
                 }
