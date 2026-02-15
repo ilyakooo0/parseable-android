@@ -350,7 +350,7 @@ fun LogViewerScreen(
 
                     // Pre-compute stable keys so each log is assigned exactly one key
                     val logKeys = remember(state.logs) {
-                        state.logs.map { stableLogKey(it) }
+                        stableLogKeys(state.logs)
                     }
 
                     LazyColumn(
@@ -622,12 +622,8 @@ fun LogEntryCard(
     isExpanded: Boolean,
     onClick: () -> Unit,
     onCopied: () -> Unit = {},
-    clipboardManager: android.content.ClipboardManager? = null,
+    clipboardManager: android.content.ClipboardManager,
 ) {
-    val resolvedClipboard = clipboardManager ?: run {
-        val context = LocalContext.current
-        remember { context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager }
-    }
     val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     val cardColors = CardDefaults.cardColors(containerColor = containerColor)
     Card(
@@ -685,7 +681,7 @@ fun LogEntryCard(
                     IconButton(
                         onClick = {
                             val text = prettyJson.encodeToString(JsonObject.serializer(), logEntry)
-                            resolvedClipboard.setPrimaryClip(
+                            clipboardManager.setPrimaryClip(
                                 android.content.ClipData.newPlainText("Log entry", text)
                             )
                             onCopied()
@@ -729,19 +725,21 @@ fun LogEntryCard(
 }
 
 /**
- * Produces a stable key for a log entry so that expanded state survives list mutations
- * (e.g., new logs prepended during streaming). Uses p_timestamp + p_metadata to form a
- * content-based identity, falling back to a hash of the entire entry.
+ * Produces deterministic keys for a list of log entries so that expanded state survives
+ * list mutations (e.g., new logs prepended during streaming). Keys are content-based
+ * using p_timestamp + p_metadata + p_tags; duplicate content gets a disambiguation suffix.
  */
-private val logKeyCounter = java.util.concurrent.atomic.AtomicLong(0)
-
-private fun stableLogKey(log: JsonObject): String {
-    val ts = log["p_timestamp"]?.toString()
-    val meta = log["p_metadata"]?.toString()
-    val tag = log["p_tags"]?.toString()
-    val seq = logKeyCounter.getAndIncrement()
-    // Use multiple fields for content identity; append a monotonic counter to guarantee uniqueness
-    return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}|$seq" else "${log}|$seq"
+private fun stableLogKeys(logs: List<JsonObject>): List<String> {
+    val seen = mutableMapOf<String, Int>()
+    return logs.map { log ->
+        val ts = log["p_timestamp"]?.toString()
+        val meta = log["p_metadata"]?.toString()
+        val tag = log["p_tags"]?.toString()
+        val base = if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
+        val count = seen.getOrDefault(base, 0)
+        seen[base] = count + 1
+        if (count == 0) base else "$base|$count"
+    }
 }
 
 private fun formatJsonValue(element: JsonElement): String {

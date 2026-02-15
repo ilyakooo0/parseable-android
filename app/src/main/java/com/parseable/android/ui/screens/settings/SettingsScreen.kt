@@ -51,88 +51,150 @@ fun SettingsScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-            // Server info
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Dns,
-                            contentDescription = "Server connection",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Server Connection",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    SettingsRow("URL", state.serverUrl)
-                    SettingsRow("Username", state.username)
-                    SettingsRow("TLS", if (state.useTls) "Enabled" else "Disabled")
-                }
-            }
-
-            // Loading indicator for server data
-            if (state.isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
+                // Server info
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Text(
-                            text = "Loading server info...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Dns,
+                                contentDescription = "Server connection",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Server Connection",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SettingsRow("URL", state.serverUrl)
+                        SettingsRow("Username", state.username)
+                        SettingsRow("TLS", if (state.useTls) "Enabled" else "Disabled")
                     }
                 }
-            }
 
-            // Error from loading server data
-            if (!state.isLoading) {
-                state.error?.let { errorText ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
+                // Loading indicator for server data
+                if (state.isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                Icons.Filled.ErrorOutline,
-                                contentDescription = "Error",
-                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = errorText,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "Loading server info...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
-            }
 
-            // About info
-            state.aboutInfo?.let { about ->
+                // Error from loading server data
+                if (!state.isLoading) {
+                    state.error?.let { errorText ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Filled.ErrorOutline,
+                                    contentDescription = "Error",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = errorText,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // About info
+                state.aboutInfo?.let { about ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.Info,
+                                    contentDescription = "Server info",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Server Info",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            about.version?.let { SettingsRow("Version", it) }
+                            about.commit?.let { SettingsRow("Commit", it.take(12)) }
+                            about.mode?.let { SettingsRow("Mode", it) }
+                            about.license?.let { SettingsRow("License", it) }
+                            about.deploymentId?.let { SettingsRow("Deployment ID", it.take(12)) }
+                            about.queryEngine?.let { SettingsRow("Query Engine", it) }
+                        }
+                    }
+                }
+
+                // Users section
+                if (state.users.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.People,
+                                    contentDescription = "Users",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Users (${state.users.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            state.users.forEach { user ->
+                                Text(
+                                    text = user,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // App info
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -140,85 +202,23 @@ fun SettingsScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Filled.Info,
-                                contentDescription = "Server info",
+                                Icons.Filled.PhoneAndroid,
+                                contentDescription = "App info",
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Server Info",
+                                text = "App",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        about.version?.let { SettingsRow("Version", it) }
-                        about.commit?.let { SettingsRow("Commit", it.take(12)) }
-                        about.mode?.let { SettingsRow("Mode", it) }
-                        about.license?.let { SettingsRow("License", it) }
-                        about.deploymentId?.let { SettingsRow("Deployment ID", it.take(12)) }
-                        about.queryEngine?.let { SettingsRow("Query Engine", it) }
+                        SettingsRow("App Version", BuildConfig.VERSION_NAME)
+                        SettingsRow("Platform", "Android")
                     }
                 }
             }
-
-            // Users section
-            if (state.users.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.People,
-                                contentDescription = "Users",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Users (${state.users.size})",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        state.users.forEach { user ->
-                            Text(
-                                text = user,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(vertical = 4.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // App info
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.PhoneAndroid,
-                            contentDescription = "App info",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "App",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    SettingsRow("App Version", BuildConfig.VERSION_NAME)
-                    SettingsRow("Platform", "Android")
-                }
-            }
-        }
         }
     }
 }

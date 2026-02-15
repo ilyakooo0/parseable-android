@@ -173,8 +173,7 @@ fun LoginScreen(
                         .substringBefore("/").substringBefore(":")
                     host.isBlank() || host == "localhost" || host.startsWith("127.") ||
                         host.startsWith("10.") || host.startsWith("192.168.") ||
-                        host.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\..*")) ||
-                        host == "10.0.2.2"
+                        host.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\..*"))
                 }
                 if (!isPrivateNetwork) {
                     Card(
