@@ -470,10 +470,14 @@ fun LogViewerScreen(
                                     file.bufferedWriter().use { writer ->
                                         // Use compact JSON for large exports to reduce memory/file size
                                         val encoder = if (logs.size > 1000) Json else prettyJson
+                                        writer.write("[")
                                         logs.forEachIndexed { index, log ->
+                                            if (index > 0) writer.write(",")
+                                            writer.newLine()
                                             writer.write(encoder.encodeToString(JsonObject.serializer(), log))
-                                            if (index < logs.lastIndex) writer.newLine()
                                         }
+                                        writer.newLine()
+                                        writer.write("]")
                                     }
                                     file
                                 }

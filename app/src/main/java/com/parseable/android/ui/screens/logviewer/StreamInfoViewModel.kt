@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.model.*
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,8 @@ class StreamInfoViewModel @Inject constructor(
                         ).distinct().joinToString("\n").ifEmpty { null },
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.update {
                     it.copy(isLoading = false, error = e.message ?: "Failed to load stream info")

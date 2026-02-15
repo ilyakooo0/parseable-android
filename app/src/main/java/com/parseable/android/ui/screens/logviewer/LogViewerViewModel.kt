@@ -90,6 +90,7 @@ class LogViewerViewModel @Inject constructor(
     @Volatile private var lastSeenTimestamp: String? = null
     @Volatile private var consecutiveStreamingErrors: Int = 0
     private var searchJob: Job? = null
+    private var schemaJob: Job? = null
 
     companion object {
         private const val STREAMING_BASE_INTERVAL_MS = 3000L
@@ -110,7 +111,8 @@ class LogViewerViewModel @Inject constructor(
     }
 
     private fun loadSchema(streamName: String) {
-        viewModelScope.launch {
+        schemaJob?.cancel()
+        schemaJob = viewModelScope.launch {
             when (val result = repository.getStreamSchema(streamName)) {
                 is ApiResult.Success -> {
                     val columns = result.data.fields.map { it.name }
@@ -453,6 +455,8 @@ class LogViewerViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        schemaJob?.cancel()
+        schemaJob = null
         searchJob?.cancel()
         searchJob = null
         stopStreaming()
