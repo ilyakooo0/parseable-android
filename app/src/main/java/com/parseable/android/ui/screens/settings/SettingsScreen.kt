@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.parseable.android.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -205,7 +206,7 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    SettingsRow("App Version", "1.0.0")
+                    SettingsRow("App Version", BuildConfig.VERSION_NAME)
                     SettingsRow("Platform", "Android")
                 }
             }

@@ -26,6 +26,16 @@ fun StreamsScreen(
     viewModel: StreamsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showLogoutConfirmation by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredStreams = remember(state.streams, searchQuery) {
+        if (searchQuery.isBlank()) {
+            state.streams
+        } else {
+            state.streams.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refresh()
@@ -53,10 +63,7 @@ fun StreamsScreen(
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
-                    IconButton(onClick = {
-                        viewModel.logout()
-                        onLogout()
-                    }) {
+                    IconButton(onClick = { showLogoutConfirmation = true }) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
                     }
                 },
@@ -115,22 +122,86 @@ fun StreamsScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.streams, key = { it.name }) { stream ->
-                        val stats = state.streamStats[stream.name]
-                        StreamCard(
-                            streamName = stream.name,
-                            stats = stats,
-                            statsFailed = stream.name in state.failedStats,
-                            onClick = { onStreamClick(stream.name) },
+                Column {
+                    if (state.streams.size > 5) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search streams...") },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Search, contentDescription = "Search")
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
+                    }
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        items(filteredStreams, key = { it.name }) { stream ->
+                            val stats = state.streamStats[stream.name]
+                            StreamCard(
+                                streamName = stream.name,
+                                stats = stats,
+                                statsFailed = stream.name in state.failedStats,
+                                onClick = { onStreamClick(stream.name) },
+                            )
+                        }
+                        if (filteredStreams.isEmpty() && searchQuery.isNotBlank()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "No streams matching \"$searchQuery\"",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showLogoutConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmation = false },
+            title = { Text("Logout") },
+            text = { Text("Are you sure you want to disconnect from this server?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutConfirmation = false
+                        viewModel.logout()
+                        onLogout()
+                    },
+                ) {
+                    Text("Logout")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 

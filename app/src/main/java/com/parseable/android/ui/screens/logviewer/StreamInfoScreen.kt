@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonObject
 fun StreamInfoScreen(
     streamName: String,
     onBack: () -> Unit,
+    onStreamDeleted: () -> Unit,
     viewModel: StreamInfoViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -33,7 +34,7 @@ fun StreamInfoScreen(
     }
 
     LaunchedEffect(state.deleteSuccess) {
-        if (state.deleteSuccess) onBack()
+        if (state.deleteSuccess) onStreamDeleted()
     }
 
     Scaffold(

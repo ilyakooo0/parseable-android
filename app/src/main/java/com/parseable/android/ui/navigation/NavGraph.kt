@@ -101,6 +101,9 @@ fun ParseableNavGraph(
             StreamInfoScreen(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },
+                onStreamDeleted = {
+                    navController.popBackStack(Routes.STREAMS, inclusive = false)
+                },
             )
         }
 

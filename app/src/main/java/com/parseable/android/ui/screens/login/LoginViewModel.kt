@@ -6,6 +6,7 @@ import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.model.ServerConfig
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
+import android.util.Patterns
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -108,6 +109,16 @@ class LoginViewModel @Inject constructor(
             var url = current.serverUrl.trim()
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 url = if (current.allowInsecure) "http://$url" else "https://$url"
+            }
+
+            if (!Patterns.WEB_URL.matcher(url).matches()) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        serverUrlError = "Invalid URL format",
+                    )
+                }
+                return@launch
             }
 
             val config = ServerConfig(
