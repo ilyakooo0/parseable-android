@@ -157,7 +157,10 @@ fun LogViewerScreen(
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
+                keyboardActions = KeyboardActions(onSearch = {
+                    keyboardController?.hide()
+                    viewModel.refresh()
+                }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -260,7 +263,7 @@ fun LogViewerScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        TextButton(onClick = viewModel::stopStreaming) {
+                        TextButton(onClick = viewModel::dismissStreamingError) {
                             Text("Dismiss")
                         }
                     }
@@ -300,6 +303,8 @@ fun LogViewerScreen(
                     }
                 } else if (state.logs.isEmpty() && !state.isLoading) {
                     val emptyMessage = when {
+                        state.isStreaming ->
+                            "Waiting for new logs\u2026"
                         state.searchQuery.isNotBlank() && state.activeFilters.isNotEmpty() ->
                             "No logs match \"${state.searchQuery}\" with the active filters"
                         state.searchQuery.isNotBlank() ->
@@ -403,10 +408,19 @@ fun LogViewerScreen(
                                         .padding(16.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    val atCap = state.currentLimit >= 5000 && state.logs.size >= 5000
                                     Text(
-                                        text = "End of results",
+                                        text = if (atCap) {
+                                            "Showing max 5,000 results. Refine your query to see more."
+                                        } else {
+                                            "End of results"
+                                        },
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (atCap) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
                                     )
                                 }
                             }
@@ -867,6 +881,12 @@ fun FilterBottomSheet(
                     singleLine = true,
                     isError = valueError != null,
                     supportingText = valueError?.let { { Text(it) } },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (selectedColumn.isNotBlank() && filterValue.isNotEmpty() && valueError == null) {
+                            onApplyFilter(selectedColumn, selectedOperator, filterValue)
+                        }
+                    }),
                 )
             }
 

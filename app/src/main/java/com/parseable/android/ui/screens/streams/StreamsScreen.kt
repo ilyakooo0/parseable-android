@@ -287,7 +287,7 @@ private fun StreamCard(
                 }
                 Icon(
                     Icons.Filled.ChevronRight,
-                    contentDescription = "Open stream",
+                    contentDescription = null, // Decorative; parent Card handles click
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

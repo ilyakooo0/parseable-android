@@ -215,12 +215,18 @@ class LogViewerViewModel @Inject constructor(
             _state.update { it.copy(error = "Only SELECT queries are allowed") }
             return
         }
-        _state.update { it.copy(filters = it.filters.copy(customSql = sql), currentLimit = 500) }
+        // Enforce a LIMIT to prevent OOM from unbounded queries
+        val safeSql = if (!trimmed.uppercase().contains("LIMIT")) {
+            "$trimmed LIMIT $MAX_LOAD_LIMIT"
+        } else {
+            trimmed
+        }
+        _state.update { it.copy(filters = it.filters.copy(customSql = safeSql), currentLimit = 500) }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
             val (startTime, endTime) = getTimeRange()
-            when (val result = repository.queryLogsRaw(sql, startTime, endTime)) {
+            when (val result = repository.queryLogsRaw(safeSql, startTime, endTime)) {
                 is ApiResult.Success -> {
                     _state.update {
                         it.copy(
@@ -254,7 +260,13 @@ class LogViewerViewModel @Inject constructor(
         if (_state.value.streamName.isEmpty()) return
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            _state.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    streaming = it.streaming.copy(streamingError = null),
+                )
+            }
 
             // Snapshot state inside the coroutine so we always see the latest filters/columns
             val current = _state.value
@@ -375,7 +387,13 @@ class LogViewerViewModel @Inject constructor(
         streamingJob?.cancel()
         streamingJob = null
         _state.update {
-            it.copy(streaming = StreamingState())
+            it.copy(streaming = it.streaming.copy(isStreaming = false))
+        }
+    }
+
+    fun dismissStreamingError() {
+        _state.update {
+            it.copy(streaming = it.streaming.copy(streamingError = null))
         }
     }
 

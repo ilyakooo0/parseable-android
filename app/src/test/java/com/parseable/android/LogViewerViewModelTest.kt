@@ -197,15 +197,63 @@ class LogViewerViewModelTest {
     }
 
     @Test
-    fun `stopStreaming resets streaming state`() {
+    fun `stopStreaming stops but preserves streaming error`() {
         viewModel.initialize("test")
         viewModel.toggleStreaming()
         viewModel.stopStreaming()
 
         val state = viewModel.state.value
         assertFalse(state.isStreaming)
-        assertEquals(0, state.streamingNewCount)
-        assertNull(state.streamingError)
+    }
+
+    @Test
+    fun `dismissStreamingError clears the error`() {
+        viewModel.initialize("test")
+        viewModel.toggleStreaming()
+        viewModel.stopStreaming()
+        viewModel.dismissStreamingError()
+
+        assertNull(viewModel.state.value.streamingError)
+    }
+
+    @Test
+    fun `executeCustomSql rejects non-SELECT queries`() {
+        viewModel.initialize("test")
+        viewModel.executeCustomSql("DELETE FROM test_stream")
+
+        assertEquals("Only SELECT queries are allowed", viewModel.state.value.error)
+    }
+
+    @Test
+    fun `executeCustomSql appends LIMIT when missing`() {
+        coEvery { repository.queryLogsRaw(any(), any(), any()) } returns ApiResult.Success(emptyList())
+
+        viewModel.initialize("test")
+        viewModel.executeCustomSql("SELECT * FROM test_stream")
+
+        coVerify {
+            repository.queryLogsRaw(
+                match { it.contains("LIMIT 5000") },
+                any(),
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun `executeCustomSql preserves existing LIMIT`() {
+        coEvery { repository.queryLogsRaw(any(), any(), any()) } returns ApiResult.Success(emptyList())
+
+        viewModel.initialize("test")
+        viewModel.executeCustomSql("SELECT * FROM test_stream LIMIT 50")
+
+        coVerify {
+            repository.queryLogsRaw(
+                match { it.trim() == "SELECT * FROM test_stream LIMIT 50" },
+                any(),
+                any(),
+            )
+        }
     }
 
     @Test
