@@ -167,7 +167,8 @@ class ParseableApiClient @Inject constructor() {
                 } catch (e: Exception) {
                     // Try alternate format: list of objects with "name" key
                     try {
-                        val arr = json.parseToJsonElement(result.data).jsonArray
+                        val parsed = json.parseToJsonElement(result.data)
+                        val arr = (parsed as? JsonArray) ?: throw IllegalArgumentException("Expected JSON array")
                         val streams = arr.map { element ->
                             when (element) {
                                 is JsonPrimitive -> LogStream(name = element.content)
@@ -223,7 +224,9 @@ class ParseableApiClient @Inject constructor() {
         val request = buildRequest("/api/v1/logstream/$encoded/info").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> parseResponse(result.data, "stream info") {
-                json.parseToJsonElement(result.data).jsonObject
+                val element = json.parseToJsonElement(result.data)
+                (element as? JsonObject)
+                    ?: throw IllegalArgumentException("Expected JSON object, got ${element::class.simpleName}")
             }
             is ApiResult.Error -> result
         }
@@ -272,8 +275,10 @@ class ParseableApiClient @Inject constructor() {
 
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> parseResponse(result.data, "query results") {
-                val elements = json.parseToJsonElement(result.data).jsonArray
-                elements.map { it.jsonObject }
+                val element = json.parseToJsonElement(result.data)
+                val elements = (element as? JsonArray)
+                    ?: throw IllegalArgumentException("Expected JSON array, got ${element::class.simpleName}")
+                elements.mapNotNull { it as? JsonObject }
             }
             is ApiResult.Error -> result
         }
@@ -347,8 +352,10 @@ class ParseableApiClient @Inject constructor() {
         val request = buildRequest("/api/v1/user").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> parseResponse(result.data, "users") {
-                val elements = json.parseToJsonElement(result.data).jsonArray
-                elements.map { it.jsonObject }
+                val element = json.parseToJsonElement(result.data)
+                val elements = (element as? JsonArray)
+                    ?: throw IllegalArgumentException("Expected JSON array, got ${element::class.simpleName}")
+                elements.mapNotNull { it as? JsonObject }
             }
             is ApiResult.Error -> result
         }

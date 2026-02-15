@@ -80,7 +80,6 @@ dependencies {
 
     // Networking
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
 
     // Serialization
     implementation(libs.kotlinx.serialization.json)

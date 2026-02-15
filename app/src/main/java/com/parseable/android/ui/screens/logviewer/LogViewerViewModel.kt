@@ -86,9 +86,9 @@ class LogViewerViewModel @Inject constructor(
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+00:00'")
 
     private var streamingJob: Job? = null
-    private var streamingGeneration: Int = 0
-    private var lastSeenTimestamp: String? = null
-    private var consecutiveStreamingErrors: Int = 0
+    @Volatile private var streamingGeneration: Int = 0
+    @Volatile private var lastSeenTimestamp: String? = null
+    @Volatile private var consecutiveStreamingErrors: Int = 0
     private var searchJob: Job? = null
 
     companion object {
@@ -98,6 +98,7 @@ class LogViewerViewModel @Inject constructor(
         private const val MAX_LOAD_LIMIT = 5000
         private const val LOAD_MORE_INCREMENT = 500
         private const val MAX_STREAMING_ERRORS = 5
+        private val ALLOWED_OPERATORS = setOf("=", "!=", "LIKE", "ILIKE", ">", "<", ">=", "<=", "IS NULL", "IS NOT NULL")
     }
 
     fun initialize(streamName: String) {
@@ -157,6 +158,7 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun addFilter(column: String, operator: String, value: String) {
+        if (operator !in ALLOWED_OPERATORS) return
         val safeColumn = escapeIdentifier(column)
         val safeValue = escapeSql(value)
         val clause = when (operator) {
@@ -180,18 +182,22 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun removeFilter(display: String) {
-        val index = _state.value.filters.activeFilters.indexOf(display)
-        if (index >= 0) {
-            _state.update {
+        var removed = false
+        _state.update {
+            val index = it.filters.activeFilters.indexOf(display)
+            if (index >= 0 && index < it.filters.filterClauses.size) {
+                removed = true
                 it.copy(
                     filters = it.filters.copy(
                         activeFilters = it.filters.activeFilters.toMutableList().apply { removeAt(index) },
                         filterClauses = it.filters.filterClauses.toMutableList().apply { removeAt(index) },
                     ),
                 )
+            } else {
+                it
             }
-            refresh()
         }
+        if (removed) refresh()
     }
 
     fun clearFilters() {

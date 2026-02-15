@@ -38,6 +38,10 @@
 # Keep the custom X509TrustManager used for insecure TLS config
 -keep class com.parseable.android.data.api.ParseableApiClient { *; }
 
+# EncryptedSharedPreferences (androidx.security:security-crypto)
+-keep class androidx.security.crypto.** { *; }
+-keep class * extends android.content.SharedPreferences { *; }
+
 # Google Tink (transitive dependency of androidx.security:security-crypto)
 # Tink's complex class hierarchy and use of Protobuf causes R8 crashes
 # in security-crypto alpha versions that ship incomplete consumer rules.

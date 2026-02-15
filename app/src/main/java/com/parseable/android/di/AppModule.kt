@@ -19,6 +19,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): ParseableDatabase =
         Room.databaseBuilder(context, ParseableDatabase::class.java, "parseable.db")
+            .fallbackToDestructiveMigration()
             .build()
 
     @Provides
