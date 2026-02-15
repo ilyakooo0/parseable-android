@@ -11,10 +11,12 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val buildInstant: Instant = Instant.now()
-val buildTime = buildInstant.atZone(ZoneOffset.UTC)
-val dateVersionName = buildTime.format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
-val dateVersionCode = (buildInstant.epochSecond / 60).toInt()
+val commitEpoch = providers.exec {
+    commandLine("git", "log", "-1", "--format=%ct")
+}.standardOutput.asText.get().trim().toLong()
+val commitTime = Instant.ofEpochSecond(commitEpoch).atZone(ZoneOffset.UTC)
+val dateVersionName = commitTime.format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
+val dateVersionCode = (commitEpoch / 60).toInt()
 
 android {
     namespace = "com.parseable.android"

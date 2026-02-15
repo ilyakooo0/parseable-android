@@ -71,9 +71,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set version from date
+      - name: Set version from commit timestamp
         run: |
-          VERSION_NAME=$(date -u +'%Y.%m.%d.%H%M')
+          VERSION_NAME=$(TZ=UTC git log -1 --format='%cd' --date=format-local:'%Y.%m.%d.%H%M')
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
 
       - name: Set up JDK 17
