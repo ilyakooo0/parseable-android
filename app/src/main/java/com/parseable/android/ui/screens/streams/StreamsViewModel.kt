@@ -2,6 +2,8 @@ package com.parseable.android.ui.screens.streams
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parseable.android.data.local.FavoriteStream
+import com.parseable.android.data.local.FavoriteStreamDao
 import com.parseable.android.data.model.AboutInfo
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.model.LogStream
@@ -25,12 +27,14 @@ data class StreamsState(
     val aboutInfo: AboutInfo? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val favoriteNames: Set<String> = emptySet(),
 )
 
 @HiltViewModel
 class StreamsViewModel @Inject constructor(
     private val repository: ParseableRepository,
     private val settingsRepository: SettingsRepository,
+    private val favoriteDao: FavoriteStreamDao,
 ) : ViewModel() {
 
     data class StreamStatsUi(
@@ -41,6 +45,24 @@ class StreamsViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(StreamsState())
     val state: StateFlow<StreamsState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            favoriteDao.getAllNames().collect { names ->
+                _state.update { it.copy(favoriteNames = names.toSet()) }
+            }
+        }
+    }
+
+    fun toggleFavorite(streamName: String) {
+        viewModelScope.launch {
+            if (streamName in _state.value.favoriteNames) {
+                favoriteDao.deleteByName(streamName)
+            } else {
+                favoriteDao.insert(FavoriteStream(streamName = streamName))
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {

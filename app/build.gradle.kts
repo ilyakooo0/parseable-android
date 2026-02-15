@@ -84,8 +84,14 @@ dependencies {
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // Encrypted storage
-    implementation("androidx.security:security-crypto:1.1.0-alpha06") // TODO: upgrade when stable 1.1.0 ships
+    // Encrypted storage — alpha06 is the latest available; stable 1.1.0 has not shipped.
+    // Fallback to 1.0.0 is not viable as it uses the deprecated MasterKeys API.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Room database for favorites
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

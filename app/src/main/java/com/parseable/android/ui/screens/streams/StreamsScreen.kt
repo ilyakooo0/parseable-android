@@ -32,12 +32,14 @@ fun StreamsScreen(
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredStreams = remember(state.streams, searchQuery) {
-        if (searchQuery.isBlank()) {
+    val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {
+        val filtered = if (searchQuery.isBlank()) {
             state.streams
         } else {
             state.streams.filter { it.name.contains(searchQuery, ignoreCase = true) }
         }
+        // Sort favorites to the top
+        filtered.sortedByDescending { it.name in state.favoriteNames }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -157,10 +159,13 @@ fun StreamsScreen(
                     ) {
                         items(filteredStreams, key = { it.name }) { stream ->
                             val stats = state.streamStats[stream.name]
+                            val isFavorite = stream.name in state.favoriteNames
                             StreamCard(
                                 streamName = stream.name,
                                 stats = stats,
                                 statsFailed = stream.name in state.failedStats,
+                                isFavorite = isFavorite,
+                                onToggleFavorite = { viewModel.toggleFavorite(stream.name) },
                                 onClick = { onStreamClick(stream.name) },
                             )
                         }
@@ -216,6 +221,8 @@ private fun StreamCard(
     streamName: String,
     stats: StreamsViewModel.StreamStatsUi?,
     statsFailed: Boolean = false,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     Card(
@@ -234,7 +241,10 @@ private fun StreamCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
                     Icon(
                         Icons.Filled.Storage,
                         contentDescription = "Log stream",
@@ -246,6 +256,14 @@ private fun StreamCard(
                         text = streamName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 Icon(

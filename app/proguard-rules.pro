@@ -22,6 +22,15 @@
 # Keep @Serializable data classes (fields needed for JSON encoding/decoding)
 -keep @kotlinx.serialization.Serializable class com.parseable.android.data.model.** { *; }
 
+# Keep ViewModel state data classes (used with StateFlow/collectAsState)
+-keep class com.parseable.android.ui.screens.**State { *; }
+-keep class com.parseable.android.ui.screens.logviewer.FilterState { *; }
+-keep class com.parseable.android.ui.screens.logviewer.StreamingState { *; }
+-keep class com.parseable.android.ui.screens.streams.StreamsViewModel$StreamStatsUi { *; }
+
+# Room entities
+-keep class com.parseable.android.data.local.** { *; }
+
 # OkHttp (library ships its own consumer rules; only suppress warnings)
 -dontwarn okhttp3.**
 -dontwarn okio.**

@@ -1,7 +1,6 @@
 package com.parseable.android
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,7 +39,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        installUncaughtExceptionHandler()
 
         setContent {
             ParseableTheme {
@@ -63,6 +61,7 @@ class MainActivity : ComponentActivity() {
                             repository.authErrors
                                 .onEach {
                                     settingsRepository.clearConfig()
+                                    errorHandler.showError("Session expired. Please log in again.")
                                     navController.navigate(Routes.login(sessionExpired = true)) {
                                         popUpTo(0) { inclusive = true }
                                     }
@@ -85,19 +84,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun installUncaughtExceptionHandler() {
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            Log.e(TAG, "Uncaught exception on thread ${thread.name}", throwable)
-            // For truly fatal errors (e.g. OOM), delegate to the default handler
-            // so the system can still terminate the process when necessary.
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
-    }
-
-    companion object {
-        private const val TAG = "ParseableApp"
     }
 }

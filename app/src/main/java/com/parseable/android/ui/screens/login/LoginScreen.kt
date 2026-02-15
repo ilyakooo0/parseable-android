@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import com.parseable.android.ui.LocalErrorHandler
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -33,7 +34,7 @@ fun LoginScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     var passwordVisible by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
+    val errorHandler = LocalErrorHandler.current
 
     LaunchedEffect(state.loginSuccess) {
         if (state.loginSuccess) {
@@ -43,16 +44,11 @@ fun LoginScreen(
 
     LaunchedEffect(sessionExpired) {
         if (sessionExpired) {
-            snackbarHostState.showSnackbar(
-                message = "Session expired. Please log in again.",
-                duration = SnackbarDuration.Long,
-            )
+            errorHandler.showError("Session expired. Please log in again.")
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
+    Scaffold { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -168,6 +164,31 @@ fun LoginScreen(
                     text = "Allow insecure (HTTP) connections",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+
+            if (state.allowInsecure) {
+                val isLocal = remember(state.serverUrl) {
+                    val host = state.serverUrl
+                        .removePrefix("http://").removePrefix("https://")
+                        .substringBefore("/").substringBefore(":")
+                    host.isBlank() || host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2"
+                }
+                if (!isLocal) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "Warning: HTTP sends credentials and data in plaintext. " +
+                                "Only use this for trusted private networks.",
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

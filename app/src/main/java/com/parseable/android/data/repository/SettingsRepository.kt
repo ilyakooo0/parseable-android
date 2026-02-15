@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,6 +30,9 @@ class SettingsRepository @Inject constructor(
     private val serverUrlKey = stringPreferencesKey("server_url")
     private val usernameKey = stringPreferencesKey("username")
     private val useTlsKey = booleanPreferencesKey("use_tls")
+
+    /** Guards concurrent reads/writes across DataStore and EncryptedSharedPreferences. */
+    private val configMutex = Mutex()
 
     private val encryptedPrefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
@@ -48,49 +53,55 @@ class SettingsRepository @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs ->
-            val url = prefs[serverUrlKey] ?: return@map null
-            val user = prefs[usernameKey] ?: return@map null
-            val pass = try {
-                withContext(Dispatchers.IO) {
-                    encryptedPrefs.getString("password", null)
-                }
-            } catch (e: Exception) {
-                Log.e("SettingsRepository", "Failed to read encrypted password", e)
-                null
-            } ?: return@map null
-            ServerConfig(
-                serverUrl = url,
-                username = user,
-                password = pass,
-                useTls = prefs[useTlsKey] ?: true,
-            )
+            configMutex.withLock {
+                val url = prefs[serverUrlKey] ?: return@withLock null
+                val user = prefs[usernameKey] ?: return@withLock null
+                val pass = try {
+                    withContext(Dispatchers.IO) {
+                        encryptedPrefs.getString("password", null)
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsRepository", "Failed to read encrypted password", e)
+                    null
+                } ?: return@withLock null
+                ServerConfig(
+                    serverUrl = url,
+                    username = user,
+                    password = pass,
+                    useTls = prefs[useTlsKey] ?: true,
+                )
+            }
         }
 
     suspend fun getSavedPassword(): ServerConfig? = serverConfig.first()
 
     suspend fun saveServerConfig(config: ServerConfig) {
-        try {
-            context.dataStore.edit { prefs ->
-                prefs[serverUrlKey] = config.serverUrl
-                prefs[usernameKey] = config.username
-                prefs[useTlsKey] = config.useTls
+        configMutex.withLock {
+            try {
+                context.dataStore.edit { prefs ->
+                    prefs[serverUrlKey] = config.serverUrl
+                    prefs[usernameKey] = config.username
+                    prefs[useTlsKey] = config.useTls
+                }
+                withContext(Dispatchers.IO) {
+                    encryptedPrefs.edit().putString("password", config.password).apply()
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsRepository", "Failed to save server config", e)
             }
-            withContext(Dispatchers.IO) {
-                encryptedPrefs.edit().putString("password", config.password).apply()
-            }
-        } catch (e: Exception) {
-            Log.e("SettingsRepository", "Failed to save server config", e)
         }
     }
 
     suspend fun clearConfig() {
-        try {
-            context.dataStore.edit { it.clear() }
-            withContext(Dispatchers.IO) {
-                encryptedPrefs.edit().clear().apply()
+        configMutex.withLock {
+            try {
+                context.dataStore.edit { it.clear() }
+                withContext(Dispatchers.IO) {
+                    encryptedPrefs.edit().clear().apply()
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsRepository", "Failed to clear config", e)
             }
-        } catch (e: Exception) {
-            Log.e("SettingsRepository", "Failed to clear config", e)
         }
     }
 }
