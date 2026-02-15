@@ -237,7 +237,7 @@ class ParseableApiClient @Inject constructor() {
                         val single = json.decodeFromString<RetentionConfig>(result.data)
                         ApiResult.Success(listOf(single))
                     } catch (e2: Exception) {
-                        ApiResult.Success(emptyList())
+                        ApiResult.Error("Failed to parse retention config: ${e2.message}")
                     }
                 }
             }
@@ -307,7 +307,7 @@ class ParseableApiClient @Inject constructor() {
                     val alerts = alertsArray.map { json.decodeFromJsonElement<Alert>(it) }
                     ApiResult.Success(alerts)
                 } catch (e: Exception) {
-                    ApiResult.Success(emptyList())
+                    ApiResult.Error("Failed to parse alerts: ${e.message}")
                 }
             }
             is ApiResult.Error -> result
@@ -325,7 +325,7 @@ class ParseableApiClient @Inject constructor() {
                     val elements = json.parseToJsonElement(result.data).jsonArray
                     ApiResult.Success(elements.map { it.jsonObject })
                 } catch (e: Exception) {
-                    ApiResult.Success(emptyList())
+                    ApiResult.Error("Failed to parse users: ${e.message}")
                 }
             }
             is ApiResult.Error -> result

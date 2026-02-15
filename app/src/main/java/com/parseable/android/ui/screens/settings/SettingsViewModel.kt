@@ -34,6 +34,10 @@ class SettingsViewModel @Inject constructor(
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
+    init {
+        load()
+    }
+
     fun load() {
         viewModelScope.launch {
             val config = settingsRepository.serverConfig.first()

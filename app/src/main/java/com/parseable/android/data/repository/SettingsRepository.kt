@@ -9,8 +9,10 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.parseable.android.data.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,7 +42,9 @@ class SettingsRepository @Inject constructor(
     val serverConfig: Flow<ServerConfig?> = context.dataStore.data.map { prefs ->
         val url = prefs[serverUrlKey] ?: return@map null
         val user = prefs[usernameKey] ?: return@map null
-        val pass = encryptedPrefs.getString("password", null) ?: return@map null
+        val pass = withContext(Dispatchers.IO) {
+            encryptedPrefs.getString("password", null)
+        } ?: return@map null
         ServerConfig(
             serverUrl = url,
             username = user,
@@ -55,11 +59,15 @@ class SettingsRepository @Inject constructor(
             prefs[usernameKey] = config.username
             prefs[useTlsKey] = config.useTls
         }
-        encryptedPrefs.edit().putString("password", config.password).commit()
+        withContext(Dispatchers.IO) {
+            encryptedPrefs.edit().putString("password", config.password).apply()
+        }
     }
 
     suspend fun clearConfig() {
         context.dataStore.edit { it.clear() }
-        encryptedPrefs.edit().clear().commit()
+        withContext(Dispatchers.IO) {
+            encryptedPrefs.edit().clear().apply()
+        }
     }
 }

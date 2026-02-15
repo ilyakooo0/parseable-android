@@ -49,7 +49,7 @@ class StreamsViewModel @Inject constructor(
 
             // Fetch about info and streams in parallel
             val aboutDeferred = async { repository.getAbout() }
-            val streamsDeferred = async { repository.listStreams() }
+            val streamsDeferred = async { repository.listStreams(forceRefresh = true) }
 
             val aboutResult = aboutDeferred.await()
             val streamsResult = streamsDeferred.await()

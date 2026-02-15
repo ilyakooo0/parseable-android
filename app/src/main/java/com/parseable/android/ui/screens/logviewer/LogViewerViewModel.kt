@@ -413,6 +413,8 @@ class LogViewerViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        searchJob?.cancel()
+        searchJob = null
         stopStreaming()
     }
 }

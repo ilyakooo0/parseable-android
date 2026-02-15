@@ -6,27 +6,77 @@ import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private class CacheEntry<T>(
+    val data: T,
+    val timestamp: Long = System.currentTimeMillis(),
+) {
+    fun isValid(ttlMs: Long): Boolean =
+        System.currentTimeMillis() - timestamp < ttlMs
+}
+
 @Singleton
 class ParseableRepository @Inject constructor(
     private val apiClient: ParseableApiClient,
 ) {
+    companion object {
+        private const val STREAMS_TTL_MS = 30_000L    // 30s
+        private const val SCHEMA_TTL_MS = 120_000L    // 2min
+        private const val STATS_TTL_MS = 30_000L      // 30s
+    }
+
+    private var streamsCache: CacheEntry<List<LogStream>>? = null
+    private val schemaCache = mutableMapOf<String, CacheEntry<StreamSchema>>()
+    private val statsCache = mutableMapOf<String, CacheEntry<StreamStats>>()
+
     fun configure(config: ServerConfig) {
         apiClient.configure(config)
+        invalidateAll()
     }
 
     val isConfigured: Boolean get() = apiClient.isConfigured
+
+    fun invalidateAll() {
+        streamsCache = null
+        schemaCache.clear()
+        statsCache.clear()
+    }
 
     suspend fun testConnection(): ApiResult<String> = apiClient.checkLiveness()
 
     suspend fun getAbout(): ApiResult<AboutInfo> = apiClient.getAbout()
 
-    suspend fun listStreams(): ApiResult<List<LogStream>> = apiClient.listStreams()
+    suspend fun listStreams(forceRefresh: Boolean = false): ApiResult<List<LogStream>> {
+        if (!forceRefresh) {
+            streamsCache?.let { if (it.isValid(STREAMS_TTL_MS)) return ApiResult.Success(it.data) }
+        }
+        return apiClient.listStreams().also { result ->
+            if (result is ApiResult.Success) {
+                streamsCache = CacheEntry(result.data)
+            }
+        }
+    }
 
-    suspend fun getStreamSchema(stream: String): ApiResult<StreamSchema> =
-        apiClient.getStreamSchema(stream)
+    suspend fun getStreamSchema(stream: String, forceRefresh: Boolean = false): ApiResult<StreamSchema> {
+        if (!forceRefresh) {
+            schemaCache[stream]?.let { if (it.isValid(SCHEMA_TTL_MS)) return ApiResult.Success(it.data) }
+        }
+        return apiClient.getStreamSchema(stream).also { result ->
+            if (result is ApiResult.Success) {
+                schemaCache[stream] = CacheEntry(result.data)
+            }
+        }
+    }
 
-    suspend fun getStreamStats(stream: String): ApiResult<StreamStats> =
-        apiClient.getStreamStats(stream)
+    suspend fun getStreamStats(stream: String, forceRefresh: Boolean = false): ApiResult<StreamStats> {
+        if (!forceRefresh) {
+            statsCache[stream]?.let { if (it.isValid(STATS_TTL_MS)) return ApiResult.Success(it.data) }
+        }
+        return apiClient.getStreamStats(stream).also { result ->
+            if (result is ApiResult.Success) {
+                statsCache[stream] = CacheEntry(result.data)
+            }
+        }
+    }
 
     suspend fun getStreamInfo(stream: String): ApiResult<JsonObject> =
         apiClient.getStreamInfo(stream)
@@ -52,8 +102,10 @@ class ParseableRepository @Inject constructor(
         endTime: String,
     ): ApiResult<List<JsonObject>> = apiClient.queryLogs(sql, startTime, endTime)
 
-    suspend fun deleteStream(stream: String): ApiResult<String> =
-        apiClient.deleteStream(stream)
+    suspend fun deleteStream(stream: String): ApiResult<String> {
+        invalidateAll()
+        return apiClient.deleteStream(stream)
+    }
 
     suspend fun listAlerts(): ApiResult<List<Alert>> = apiClient.listAlerts()
 
