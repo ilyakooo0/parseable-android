@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
                         repository.authErrors
                             .onEach {
                                 settingsRepository.clearConfig()
-                                navController.navigate(Routes.LOGIN) {
+                                navController.navigate(Routes.login(sessionExpired = true)) {
                                     popUpTo(0) { inclusive = true }
                                 }
                             }

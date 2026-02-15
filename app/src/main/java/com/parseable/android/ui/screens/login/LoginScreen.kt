@@ -27,11 +27,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
+    sessionExpired: Boolean = false,
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     var passwordVisible by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.loginSuccess) {
         if (state.loginSuccess) {
@@ -39,7 +41,18 @@ fun LoginScreen(
         }
     }
 
-    Scaffold { padding ->
+    LaunchedEffect(sessionExpired) {
+        if (sessionExpired) {
+            snackbarHostState.showSnackbar(
+                message = "Session expired. Please log in again.",
+                duration = SnackbarDuration.Long,
+            )
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

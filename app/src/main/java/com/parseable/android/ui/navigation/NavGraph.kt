@@ -23,6 +23,8 @@ object Routes {
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
 
+    fun login(sessionExpired: Boolean = false) =
+        if (sessionExpired) "login?sessionExpired=true" else LOGIN
     fun logViewer(streamName: String) =
         "log_viewer/${URLEncoder.encode(streamName, "UTF-8")}"
     fun streamInfo(streamName: String) =
@@ -38,13 +40,21 @@ fun ParseableNavGraph(
         navController = navController,
         startDestination = startDestination,
     ) {
-        composable(Routes.LOGIN) {
+        composable(
+            route = "${Routes.LOGIN}?sessionExpired={sessionExpired}",
+            arguments = listOf(navArgument("sessionExpired") {
+                type = NavType.BoolType
+                defaultValue = false
+            }),
+        ) { backStackEntry ->
+            val sessionExpired = backStackEntry.arguments?.getBoolean("sessionExpired") ?: false
             LoginScreen(
                 onLoginSuccess = {
                     navController.navigate(Routes.STREAMS) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
+                sessionExpired = sessionExpired,
             )
         }
 

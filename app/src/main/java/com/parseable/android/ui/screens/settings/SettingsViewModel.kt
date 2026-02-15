@@ -62,8 +62,12 @@ class SettingsViewModel @Inject constructor(
             val usersResult = usersDeferred.await()
 
             val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
-                obj["id"]?.jsonPrimitive?.content
-                    ?: obj["username"]?.jsonPrimitive?.content
+                try {
+                    obj["id"]?.jsonPrimitive?.content
+                        ?: obj["username"]?.jsonPrimitive?.content
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
             } ?: emptyList()
 
             val errors = listOfNotNull(
