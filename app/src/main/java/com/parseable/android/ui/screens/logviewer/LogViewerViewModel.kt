@@ -333,8 +333,8 @@ class LogViewerViewModel @Inject constructor(
 
         streamingJob = viewModelScope.launch {
             while (isActive) {
-                delay(STREAMING_INTERVAL_MS)
                 pollNewLogs()
+                delay(STREAMING_INTERVAL_MS)
             }
         }
     }

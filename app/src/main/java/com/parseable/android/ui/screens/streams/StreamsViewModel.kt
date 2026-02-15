@@ -9,7 +9,6 @@ import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -84,17 +83,13 @@ class StreamsViewModel @Inject constructor(
     private val statsSemaphore = Semaphore(4)
 
     private fun loadStreamStats(streams: List<LogStream>) {
-        viewModelScope.launch {
-            val statsMap = mutableMapOf<String, StreamStatsUi>()
-            val failed = mutableSetOf<String>()
-            streams.map { stream ->
-                async {
-                    statsSemaphore.withPermit {
-                        repository.getStreamStats(stream.name)
-                    }.let { result ->
-                        if (result is ApiResult.Success) {
+        streams.forEach { stream ->
+            viewModelScope.launch {
+                statsSemaphore.withPermit {
+                    when (val result = repository.getStreamStats(stream.name)) {
+                        is ApiResult.Success -> {
                             val stats = result.data
-                            stream.name to StreamStatsUi(
+                            val ui = StreamStatsUi(
                                 eventCount = stats.ingestion?.count
                                     ?: stats.ingestion?.lifetimeCount,
                                 ingestionSize = stats.ingestion?.size
@@ -102,16 +97,18 @@ class StreamsViewModel @Inject constructor(
                                 storageSize = stats.storage?.size
                                     ?: stats.storage?.lifetimeSize,
                             )
-                        } else {
-                            failed.add(stream.name)
-                            null
+                            _state.update {
+                                it.copy(streamStats = it.streamStats + (stream.name to ui))
+                            }
+                        }
+                        is ApiResult.Error -> {
+                            _state.update {
+                                it.copy(failedStats = it.failedStats + stream.name)
+                            }
                         }
                     }
                 }
-            }.awaitAll().filterNotNull().forEach { (name, stats) ->
-                statsMap[name] = stats
             }
-            _state.update { it.copy(streamStats = statsMap, failedStats = failed) }
         }
     }
 

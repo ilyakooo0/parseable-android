@@ -310,6 +310,20 @@ fun LogViewerScreen(
                     }
                 } else {
                     val listState = rememberLazyListState()
+
+                    // Auto-load more when scrolling near the bottom
+                    if (state.hasMore && !state.isLoading) {
+                        val shouldLoadMore by remember {
+                            derivedStateOf {
+                                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                                lastVisible >= listState.layoutInfo.totalItemsCount - 5
+                            }
+                        }
+                        LaunchedEffect(shouldLoadMore) {
+                            if (shouldLoadMore) viewModel.loadMore()
+                        }
+                    }
+
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(8.dp),
@@ -319,7 +333,7 @@ fun LogViewerScreen(
                             state.logs,
                             key = { _, log -> stableLogKey(log) },
                         ) { _, logEntry ->
-                            val key = stableLogKey(logEntry)
+                            val key = remember(logEntry) { stableLogKey(logEntry) }
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
@@ -337,9 +351,10 @@ fun LogViewerScreen(
                                         .padding(16.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    OutlinedButton(onClick = viewModel::loadMore) {
-                                        Text("Load more")
-                                    }
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                    )
                                 }
                             }
                         }
@@ -471,18 +486,22 @@ fun LogEntryCard(
     isExpanded: Boolean,
     onClick: () -> Unit,
 ) {
+    val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val cardColors = remember(containerColor) {
+        CardDefaults.cardColors(containerColor = containerColor)
+    }
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        ),
+        colors = cardColors,
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Timestamp row
-            val timestamp = logEntry["p_timestamp"]?.jsonPrimitive?.content
-                ?: logEntry["datetime"]?.jsonPrimitive?.content
-                ?: ""
+            val timestamp = remember(logEntry) {
+                logEntry["p_timestamp"]?.jsonPrimitive?.content
+                    ?: logEntry["datetime"]?.jsonPrimitive?.content
+                    ?: ""
+            }
 
             if (timestamp.isNotEmpty()) {
                 Text(
@@ -512,8 +531,9 @@ fun LogEntryCard(
                 )
             } else {
                 // Expanded view: show all fields
+                val entries = remember(logEntry) { logEntry.entries.toList() }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                logEntry.entries.forEach { (key, value) ->
+                entries.forEach { (key, value) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
