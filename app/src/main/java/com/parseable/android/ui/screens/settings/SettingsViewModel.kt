@@ -7,6 +7,7 @@ import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,33 +56,42 @@ class SettingsViewModel @Inject constructor(
                 )
             }
 
-            val aboutDeferred = async { repository.getAbout() }
-            val usersDeferred = async { repository.listUsers() }
+            try {
+                val aboutDeferred = async { repository.getAbout() }
+                val usersDeferred = async { repository.listUsers() }
 
-            val aboutResult = aboutDeferred.await()
-            val usersResult = usersDeferred.await()
+                val aboutResult = aboutDeferred.await()
+                val usersResult = usersDeferred.await()
 
-            val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
-                try {
-                    obj["id"]?.jsonPrimitive?.content
-                        ?: obj["username"]?.jsonPrimitive?.content
-                } catch (_: IllegalStateException) {
-                    null
+                val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
+                    try {
+                        obj["id"]?.jsonPrimitive?.content
+                            ?: obj["username"]?.jsonPrimitive?.content
+                    } catch (_: IllegalStateException) {
+                        null
+                    }
+                } ?: emptyList()
+
+                val errors = listOfNotNull(
+                    (aboutResult as? ApiResult.Error)?.userMessage,
+                    (usersResult as? ApiResult.Error)?.userMessage,
+                ).distinct().joinToString("\n").ifEmpty { null }
+
+                _state.update {
+                    it.copy(
+                        aboutInfo = (aboutResult as? ApiResult.Success)?.data,
+                        users = userNames,
+                        isLoading = false,
+                        error = errors,
+                    )
                 }
-            } ?: emptyList()
-
-            val errors = listOfNotNull(
-                (aboutResult as? ApiResult.Error)?.userMessage,
-                (usersResult as? ApiResult.Error)?.userMessage,
-            ).distinct().joinToString("\n").ifEmpty { null }
-
-            _state.update {
-                it.copy(
-                    aboutInfo = (aboutResult as? ApiResult.Success)?.data,
-                    users = userNames,
-                    isLoading = false,
-                    error = errors,
-                )
+            } catch (e: CancellationException) {
+                _state.update { it.copy(isLoading = false) }
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isLoading = false, error = e.message ?: "Failed to load settings")
+                }
             }
         }
     }

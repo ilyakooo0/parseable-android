@@ -115,6 +115,14 @@ fun StreamInfoScreen(
                             )
                         }
                     }
+                } else if (state.schemaFailed) {
+                    InfoSection(title = "Schema") {
+                        Text(
+                            text = "Schema unavailable",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 // Retention section

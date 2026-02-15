@@ -103,30 +103,28 @@ fun SettingsScreen(
                 }
 
                 // Error from loading server data
-                if (!state.isLoading) {
-                    state.error?.let { errorText ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
+                state.error?.let { errorText ->
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    Icons.Filled.ErrorOutline,
-                                    contentDescription = "Error",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = errorText,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
+                            Icon(
+                                Icons.Filled.ErrorOutline,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = errorText,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
                     }
                 }

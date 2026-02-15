@@ -20,6 +20,7 @@ data class StreamInfoState(
     val streamName: String = "",
     val stats: StreamStats? = null,
     val schema: List<SchemaField> = emptyList(),
+    val schemaFailed: Boolean = false,
     val retention: List<RetentionConfig> = emptyList(),
     val rawInfo: JsonObject? = null,
     val isLoading: Boolean = false,
@@ -57,6 +58,7 @@ class StreamInfoViewModel @Inject constructor(
                     it.copy(
                         stats = (statsResult as? ApiResult.Success)?.data,
                         schema = (schemaResult as? ApiResult.Success)?.data?.fields ?: emptyList(),
+                        schemaFailed = schemaResult is ApiResult.Error,
                         retention = (retentionResult as? ApiResult.Success)?.data ?: emptyList(),
                         rawInfo = (infoResult as? ApiResult.Success)?.data,
                         isLoading = false,
