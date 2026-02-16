@@ -368,11 +368,6 @@ fun LogViewerScreen(
                         }
                     }
 
-                    // Pre-compute stable keys so each log is assigned exactly one key
-                    val logKeys = remember(state.logs) {
-                        stableLogKeys(state.logs)
-                    }
-
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(8.dp),
@@ -380,9 +375,9 @@ fun LogViewerScreen(
                     ) {
                         itemsIndexed(
                             state.logs,
-                            key = { index, _ -> logKeys.getOrElse(index) { "log_$index" } },
+                            key = { index, _ -> state.logKeys.getOrElse(index) { "log_$index" } },
                         ) { index, logEntry ->
-                            val key = logKeys.getOrElse(index) { "log_$index" }
+                            val key = state.logKeys.getOrElse(index) { "log_$index" }
                             LogEntryCard(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
@@ -789,24 +784,6 @@ fun LogEntryCard(
                 }
             }
         }
-    }
-}
-
-/**
- * Produces deterministic keys for a list of log entries so that expanded state survives
- * list mutations (e.g., new logs prepended during streaming). Keys are content-based
- * using p_timestamp + p_metadata + p_tags; duplicate content gets a disambiguation suffix.
- */
-private fun stableLogKeys(logs: List<JsonObject>): List<String> {
-    val seen = mutableMapOf<String, Int>()
-    return logs.map { log ->
-        val ts = log["p_timestamp"]?.toString()
-        val meta = log["p_metadata"]?.toString()
-        val tag = log["p_tags"]?.toString()
-        val base = if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
-        val count = seen.getOrDefault(base, 0)
-        seen[base] = count + 1
-        if (count == 0) base else "$base|$count"
     }
 }
 

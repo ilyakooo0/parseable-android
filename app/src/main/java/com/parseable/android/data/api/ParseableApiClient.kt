@@ -39,7 +39,7 @@ class ParseableApiClient @Inject constructor() {
         coerceInputValues = true
     }
 
-    private val sharedPool = okhttp3.ConnectionPool(5, 5, TimeUnit.MINUTES)
+    private val sharedPool = okhttp3.ConnectionPool(16, 5, TimeUnit.MINUTES)
     private val sharedDispatcher = okhttp3.Dispatcher()
 
     private val secureClient: OkHttpClient = buildClient(allowInsecure = false)
