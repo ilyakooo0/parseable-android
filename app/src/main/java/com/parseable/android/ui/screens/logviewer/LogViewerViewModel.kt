@@ -59,7 +59,9 @@ data class SavedFiltersState(
 data class LogViewerState(
     val streamName: String = "",
     val logs: List<JsonObject> = emptyList(),
+    val logKeys: List<String> = emptyList(),
     val columns: List<String> = emptyList(),
+    val searchableColumns: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectedTimeRange: TimeRange = TimeRange.LAST_1H,
@@ -108,6 +110,23 @@ class LogViewerViewModel @Inject constructor(
         private const val LOAD_MORE_INCREMENT = 500
         private const val MAX_STREAMING_ERRORS = 5
         private val ALLOWED_OPERATORS = setOf("=", "!=", "LIKE", "ILIKE", ">", "<", ">=", "<=", "IS NULL", "IS NOT NULL")
+
+        /**
+         * Produces deterministic keys for a list of log entries so that expanded state
+         * survives list mutations (e.g., new logs prepended during streaming).
+         */
+        internal fun computeLogKeys(logs: List<JsonObject>): List<String> {
+            val seen = mutableMapOf<String, Int>()
+            return logs.map { log ->
+                val ts = log["p_timestamp"]?.toString()
+                val meta = log["p_metadata"]?.toString()
+                val tag = log["p_tags"]?.toString()
+                val base = if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
+                val count = seen.getOrDefault(base, 0)
+                seen[base] = count + 1
+                if (count == 0) base else "$base|$count"
+            }
+        }
     }
 
     fun initialize(streamName: String) {
@@ -124,7 +143,8 @@ class LogViewerViewModel @Inject constructor(
             when (val result = repository.getStreamSchema(streamName)) {
                 is ApiResult.Success -> {
                     val columns = result.data.fields.map { it.name }.sorted()
-                    _state.update { it.copy(columns = columns) }
+                    val searchable = columns.filter { !it.startsWith("p_") }
+                    _state.update { it.copy(columns = columns, searchableColumns = searchable) }
                 }
                 is ApiResult.Error -> { /* Schema loading failure is non-fatal */ }
             }
@@ -236,9 +256,11 @@ class LogViewerViewModel @Inject constructor(
             val (startTime, endTime) = getTimeRange()
             when (val result = repository.queryLogsRaw(safeSql, startTime, endTime)) {
                 is ApiResult.Success -> {
+                    val keys = computeLogKeys(result.data)
                     _state.update {
                         it.copy(
                             logs = result.data,
+                            logKeys = keys,
                             isLoading = false,
                             hasMore = result.data.size >= it.currentLimit,
                         )
@@ -253,13 +275,11 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
-    private fun buildSearchClause(columns: List<String>, searchQuery: String): String? {
+    private fun buildSearchClause(searchableColumns: List<String>, searchQuery: String): String? {
         if (searchQuery.isBlank()) return null
+        if (searchableColumns.isEmpty()) return null
         val safeSearch = escapeSql(searchQuery)
-        // Search across ALL non-internal columns (not just 5)
-        val searchFields = columns.filter { !it.startsWith("p_") }
-        if (searchFields.isEmpty()) return null
-        return searchFields.joinToString(" OR ") {
+        return searchableColumns.joinToString(" OR ") {
             "\"${escapeIdentifier(it)}\" ILIKE '%$safeSearch%'"
         }
     }
@@ -283,7 +303,7 @@ class LogViewerViewModel @Inject constructor(
             // Build WHERE clause from filters + search
             val clauses = current.filters.filterClauses.toMutableList()
             if (current.filters.searchQuery.isNotBlank()) {
-                val searchClause = buildSearchClause(current.columns, current.filters.searchQuery)
+                val searchClause = buildSearchClause(current.searchableColumns, current.filters.searchQuery)
                 if (searchClause != null) {
                     clauses.add("($searchClause)")
                 } else {
@@ -304,9 +324,11 @@ class LogViewerViewModel @Inject constructor(
                 limit = current.currentLimit,
             )) {
                 is ApiResult.Success -> {
+                    val keys = computeLogKeys(result.data)
                     _state.update {
                         it.copy(
                             logs = result.data,
+                            logKeys = keys,
                             isLoading = false,
                             hasMore = result.data.size >= it.currentLimit,
                         )
@@ -415,7 +437,7 @@ class LogViewerViewModel @Inject constructor(
         // Build WHERE clause from active filters + search
         val clauses = current.filters.filterClauses.toMutableList()
         if (current.filters.searchQuery.isNotBlank()) {
-            val searchClause = buildSearchClause(current.columns, current.filters.searchQuery)
+            val searchClause = buildSearchClause(current.searchableColumns, current.filters.searchQuery)
             if (searchClause != null) {
                 clauses.add(searchClause)
             }
@@ -441,15 +463,16 @@ class LogViewerViewModel @Inject constructor(
                     }
 
                     _state.update { state ->
-                        // Prepend new logs, cap total
-                        val combined = newLogs + state.logs
-                        val capped = if (combined.size > STREAMING_MAX_LOGS) {
-                            combined.take(STREAMING_MAX_LOGS)
-                        } else {
-                            combined
+                        // Prepend new logs, cap total — avoid full intermediate list allocation
+                        val remaining = (STREAMING_MAX_LOGS - newLogs.size).coerceAtLeast(0)
+                        val capped = ArrayList<JsonObject>(newLogs.size + remaining).apply {
+                            addAll(newLogs)
+                            val oldLogs = state.logs
+                            addAll(oldLogs.subList(0, remaining.coerceAtMost(oldLogs.size)))
                         }
                         state.copy(
                             logs = capped,
+                            logKeys = computeLogKeys(capped),
                             streaming = state.streaming.copy(
                                 streamingNewCount = state.streaming.streamingNewCount + newLogs.size,
                                 streamingError = null,
