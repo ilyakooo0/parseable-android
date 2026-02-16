@@ -2,6 +2,7 @@ package com.parseable.android.ui.screens.about
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,9 +14,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.parseable.android.BuildConfig
+import com.parseable.android.R
 
 private const val GITHUB_REPO_URL = "https://github.com/parseablehq/parseable-android"
 private const val PARSEABLE_WEBSITE_URL = "https://www.parseable.com"
@@ -58,11 +61,10 @@ fun AboutScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Icon(
-                        Icons.Filled.Terminal,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentDescription = "Parseable logo",
+                        modifier = Modifier.size(80.dp),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
