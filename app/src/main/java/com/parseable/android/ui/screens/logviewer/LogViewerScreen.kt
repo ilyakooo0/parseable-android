@@ -398,6 +398,12 @@ fun LogViewerScreen(
                                         )
                                     }
                                 },
+                                onFilterInclude = { column, value ->
+                                    viewModel.addFilter(column, "=", value)
+                                },
+                                onFilterExclude = { column, value ->
+                                    viewModel.addFilter(column, "!=", value)
+                                },
                             )
                         }
 
@@ -450,6 +456,7 @@ fun LogViewerScreen(
     if (showFilterSheet) {
         FilterBottomSheet(
             columns = state.columns,
+            logs = state.logs,
             onDismiss = { showFilterSheet = false },
             onApplyFilter = { column, operator, value ->
                 viewModel.addFilter(column, operator, value)
@@ -686,6 +693,8 @@ fun LogEntryCard(
     isExpanded: Boolean,
     onClick: () -> Unit,
     onCopied: () -> Unit = {},
+    onFilterInclude: (column: String, value: String) -> Unit = { _, _ -> },
+    onFilterExclude: (column: String, value: String) -> Unit = { _, _ -> },
     clipboardManager: android.content.ClipboardManager,
 ) {
     val severity = remember(logEntry) { detectSeverity(logEntry) }
@@ -766,25 +775,55 @@ fun LogEntryCard(
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 logEntry.entries.forEach { (key, value) ->
+                    val displayValue = formatJsonValue(value)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "$key: ",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                        )
-                        Text(
-                            text = formatJsonValue(value),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row {
+                                Text(
+                                    text = "$key: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                )
+                                Text(
+                                    text = displayValue,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                        }
+                        // Filter include (=) button
+                        IconButton(
+                            onClick = { onFilterInclude(key, displayValue) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.AddCircle,
+                                contentDescription = "Filter for $key = $displayValue",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        // Filter exclude (!=) button
+                        IconButton(
+                            onClick = { onFilterExclude(key, displayValue) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.RemoveCircle,
+                                contentDescription = "Filter out $key = $displayValue",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
             }
@@ -822,6 +861,7 @@ private fun formatJsonValue(element: JsonElement): String {
 @Composable
 fun FilterBottomSheet(
     columns: List<String>,
+    logs: List<JsonObject> = emptyList(),
     onDismiss: () -> Unit,
     onApplyFilter: (column: String, operator: String, value: String) -> Unit,
 ) {
@@ -832,6 +872,28 @@ fun FilterBottomSheet(
     var operatorDropdownExpanded by remember { mutableStateOf(false) }
 
     val operators = listOf("=", "!=", "LIKE", "ILIKE", ">", "<", ">=", "<=", "IS NULL", "IS NOT NULL")
+
+    // Extract distinct values for the selected column from current logs
+    val columnValues = remember(selectedColumn, logs) {
+        if (selectedColumn.isBlank() || logs.isEmpty()) {
+            emptyList()
+        } else {
+            logs.asSequence()
+                .mapNotNull { entry ->
+                    try {
+                        entry[selectedColumn]?.let { element ->
+                            formatJsonValue(element).takeIf { it != "null" && it.isNotBlank() }
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                .distinct()
+                .take(50)
+                .sorted()
+                .toList()
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -868,6 +930,7 @@ fun FilterBottomSheet(
                             text = { Text(column) },
                             onClick = {
                                 selectedColumn = column
+                                filterValue = ""
                                 columnDropdownExpanded = false
                             },
                         )
@@ -936,6 +999,44 @@ fun FilterBottomSheet(
                         }
                     }),
                 )
+
+                // Show existing values as selectable suggestions
+                if (columnValues.isNotEmpty() && selectedOperator in listOf("=", "!=")) {
+                    Text(
+                        text = "Existing values:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Filter suggestions by typed text
+                    val filteredValues = remember(columnValues, filterValue) {
+                        if (filterValue.isBlank()) columnValues
+                        else columnValues.filter {
+                            it.contains(filterValue, ignoreCase = true)
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        filteredValues.forEach { value ->
+                            SuggestionChip(
+                                onClick = {
+                                    onApplyFilter(selectedColumn, selectedOperator, value)
+                                },
+                                label = {
+                                    Text(
+                                        text = if (value.length > 40) value.take(40) + "\u2026" else value,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontSize = 12.sp,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
             }
 
             val hasValueError = selectedOperator in listOf(">", "<", ">=", "<=") &&
