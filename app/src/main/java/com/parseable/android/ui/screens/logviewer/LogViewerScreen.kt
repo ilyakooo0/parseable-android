@@ -382,7 +382,22 @@ fun LogViewerScreen(
                                 logEntry = logEntry,
                                 isExpanded = expandedLogKey == key,
                                 onClick = {
-                                    expandedLogKey = if (expandedLogKey == key) null else key
+                                    if (expandedLogKey == key) {
+                                        // Collapsing: if the top of the entry is scrolled
+                                        // above the viewport, jump to it so the user sees
+                                        // the collapsed card instead of a random position.
+                                        val itemInfo = listState.layoutInfo.visibleItemsInfo
+                                            .firstOrNull { it.index == index }
+                                        val needsScroll = itemInfo == null || itemInfo.offset < 0
+                                        expandedLogKey = null
+                                        if (needsScroll) {
+                                            scope.launch {
+                                                listState.animateScrollToItem(index)
+                                            }
+                                        }
+                                    } else {
+                                        expandedLogKey = key
+                                    }
                                 },
                                 clipboardManager = clipboard,
                                 onCopied = {
