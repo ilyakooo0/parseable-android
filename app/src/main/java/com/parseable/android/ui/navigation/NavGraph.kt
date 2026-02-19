@@ -177,6 +177,11 @@ fun ParseableNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onServerSwitched = {
+                    navController.navigate(Routes.STREAMS) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
             )
         }
 
