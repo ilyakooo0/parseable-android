@@ -12,10 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.parseable.android.BuildConfig
+import com.parseable.android.data.local.SavedServer
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -24,9 +26,18 @@ import kotlinx.serialization.json.jsonPrimitive
 fun SettingsScreen(
     onBack: () -> Unit,
     onAboutClick: () -> Unit,
+    onServerSwitched: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val switchEvent by viewModel.switchEvent.collectAsStateWithLifecycle()
+
+    LaunchedEffect(switchEvent) {
+        if (switchEvent != null) {
+            viewModel.consumeSwitchEvent()
+            onServerSwitched()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -78,6 +89,17 @@ fun SettingsScreen(
                         SettingsRow("Username", state.username)
                         SettingsRow("TLS", if (state.useTls) "Enabled" else "Disabled")
                     }
+                }
+
+                // Saved servers
+                if (state.savedServers.size > 1) {
+                    SavedServersCard(
+                        servers = state.savedServers,
+                        activeServerId = state.activeServerId,
+                        isSwitching = state.isSwitching,
+                        onSwitch = viewModel::switchToServer,
+                        onDelete = viewModel::deleteServer,
+                    )
                 }
 
                 // Loading indicator for server data
@@ -251,6 +273,135 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedServersCard(
+    servers: List<SavedServer>,
+    activeServerId: Long?,
+    isSwitching: Boolean,
+    onSwitch: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    var serverToDelete by remember { mutableStateOf<SavedServer?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.SwapHoriz,
+                    contentDescription = "Saved servers",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Saved Servers (${servers.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (isSwitching) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            servers.forEach { server ->
+                val isActive = server.id == activeServerId
+                SavedServerRow(
+                    server = server,
+                    isActive = isActive,
+                    enabled = !isSwitching,
+                    onSwitch = { onSwitch(server.id) },
+                    onDelete = { serverToDelete = server },
+                )
+            }
+        }
+    }
+
+    serverToDelete?.let { server ->
+        AlertDialog(
+            onDismissRequest = { serverToDelete = null },
+            title = { Text("Remove Server") },
+            text = {
+                Text("Remove ${server.username}@${server.serverUrl} from saved servers?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDelete(server.id)
+                        serverToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { serverToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SavedServerRow(
+    server: SavedServer,
+    isActive: Boolean,
+    enabled: Boolean,
+    onSwitch: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (isActive) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+            contentDescription = if (isActive) "Active" else "Inactive",
+            tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = server.serverUrl,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = server.username,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (!isActive) {
+            TextButton(onClick = onSwitch, enabled = enabled) {
+                Text("Switch")
+            }
+            IconButton(onClick = onDelete, enabled = enabled) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "Remove server",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

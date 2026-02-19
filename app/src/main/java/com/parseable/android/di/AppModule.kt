@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.parseable.android.data.local.FavoriteStreamDao
 import com.parseable.android.data.local.ParseableDatabase
+import com.parseable.android.data.local.SavedServerDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,4 +27,9 @@ object AppModule {
     @Singleton
     fun provideFavoriteStreamDao(db: ParseableDatabase): FavoriteStreamDao =
         db.favoriteStreamDao()
+
+    @Provides
+    @Singleton
+    fun provideSavedServerDao(db: ParseableDatabase): SavedServerDao =
+        db.savedServerDao()
 }
