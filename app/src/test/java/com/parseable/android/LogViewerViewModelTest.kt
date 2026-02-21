@@ -164,9 +164,9 @@ class LogViewerViewModelTest {
                 startTime = any(),
                 endTime = any(),
                 filterSql = match {
-                    it.contains("\"message\" ILIKE '%error%'") &&
-                    it.contains("\"level\" ILIKE '%error%'") &&
-                    !it.contains("p_timestamp ILIKE") // Internal columns excluded
+                    it.contains("CAST(\"message\" AS VARCHAR) ILIKE '%error%'") &&
+                    it.contains("CAST(\"level\" AS VARCHAR) ILIKE '%error%'") &&
+                    !it.contains("p_timestamp") // Internal columns excluded
                 },
                 limit = any(),
             )
