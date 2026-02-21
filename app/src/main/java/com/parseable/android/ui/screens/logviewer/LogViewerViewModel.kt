@@ -188,6 +188,11 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun addFilter(column: String, operator: String, value: String) {
+        addFilterInternal(column, operator, value)
+        refresh()
+    }
+
+    private fun addFilterInternal(column: String, operator: String, value: String) {
         if (operator !in ALLOWED_OPERATORS) return
         val safeColumn = escapeIdentifier(column)
         val safeValue = escapeSql(value)
@@ -208,7 +213,6 @@ class LogViewerViewModel @Inject constructor(
                 ),
             )
         }
-        refresh()
     }
 
     fun removeFilter(display: String) {
@@ -280,7 +284,7 @@ class LogViewerViewModel @Inject constructor(
         if (searchableColumns.isEmpty()) return null
         val safeSearch = escapeSql(searchQuery)
         return searchableColumns.joinToString(" OR ") {
-            "\"${escapeIdentifier(it)}\" ILIKE '%$safeSearch%'"
+            "CAST(\"${escapeIdentifier(it)}\" AS VARCHAR) ILIKE '%$safeSearch%'"
         }
     }
 
@@ -439,7 +443,7 @@ class LogViewerViewModel @Inject constructor(
         if (current.filters.searchQuery.isNotBlank()) {
             val searchClause = buildSearchClause(current.searchableColumns, current.filters.searchQuery)
             if (searchClause != null) {
-                clauses.add(searchClause)
+                clauses.add("($searchClause)")
             }
         }
 
@@ -640,7 +644,7 @@ class LogViewerViewModel @Inject constructor(
         for (group in builder.rules) {
             for (rule in group.rules) {
                 if (rule.field.isNotBlank()) {
-                    addFilter(rule.field, rule.operator, rule.value)
+                    addFilterInternal(rule.field, rule.operator, rule.value)
                 }
             }
         }
