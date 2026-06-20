@@ -95,9 +95,10 @@ fun AlertsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     // Key on the (unique) alert id when present so per-item expand state
-                    // survives list mutations; fall back to index only for id-less alerts,
-                    // which keeps keys unique to avoid a duplicate-key crash.
-                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: "alert_$index" }) { _, alert ->
+                    // survives list mutations; fall back to index only for id-less alerts.
+                    // Namespace the two cases ("id_"/"idx_") so a real id can never collide
+                    // with an index-based fallback key and trigger a duplicate-key crash.
+                    itemsIndexed(state.alerts, key = { index, alert -> alert.id?.let { "id_$it" } ?: "idx_$index" }) { _, alert ->
                         AlertCard(
                             alert = alert,
                             onDelete = if (alert.id != null) {

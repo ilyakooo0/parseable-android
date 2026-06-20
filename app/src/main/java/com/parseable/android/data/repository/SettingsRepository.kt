@@ -103,8 +103,13 @@ class SettingsRepository @Inject constructor(
 
     suspend fun getSavedPassword(): ServerConfig? = serverConfig.first()
 
-    suspend fun saveServerConfig(config: ServerConfig) {
-        configMutex.withLock {
+    /**
+     * Persist the server config. Returns true only if the credentials were durably saved.
+     * Callers (e.g. login) must not report success when this returns false — otherwise the
+     * session would appear logged in but vanish on the next launch.
+     */
+    suspend fun saveServerConfig(config: ServerConfig): Boolean {
+        return configMutex.withLock {
             try {
                 // Persist the password (encrypted) first and confirm it committed. If the
                 // Keystore-backed write fails we abort before touching DataStore, so we never
@@ -114,15 +119,17 @@ class SettingsRepository @Inject constructor(
                 }
                 if (!passwordSaved) {
                     Timber.e("Failed to persist credentials securely; aborting config save")
-                    return@withLock
+                    return@withLock false
                 }
                 context.dataStore.edit { prefs ->
                     prefs[serverUrlKey] = config.serverUrl
                     prefs[usernameKey] = config.username
                     prefs[useTlsKey] = config.useTls
                 }
+                true
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save server config")
+                false
             }
         }
     }

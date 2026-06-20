@@ -22,7 +22,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 
@@ -66,14 +68,22 @@ class StreamsViewModel @Inject constructor(
         refresh()
     }
 
+    // Serializes toggles so two rapid taps can't both read the same pre-update state and
+    // take the same branch (which, with idempotent DAO ops, would leave the favorite in the
+    // wrong final state — e.g. tap-twice nets to "favorited" instead of cancelling out).
+    private val favoriteMutex = Mutex()
+
     fun toggleFavorite(streamName: String) {
         viewModelScope.launch {
-            if (streamName in _state.value.favoriteNames) {
-                favoriteDao.deleteByName(streamName)
-                _snackbarEvent.send("Removed from favorites")
-            } else {
-                favoriteDao.insert(FavoriteStream(streamName = streamName))
-                _snackbarEvent.send("Added to favorites")
+            favoriteMutex.withLock {
+                // Decide from the committed DB state, not the async-mirrored favoriteNames.
+                if (favoriteDao.isFavoriteNow(streamName)) {
+                    favoriteDao.deleteByName(streamName)
+                    _snackbarEvent.send("Removed from favorites")
+                } else {
+                    favoriteDao.insert(FavoriteStream(streamName = streamName))
+                    _snackbarEvent.send("Added to favorites")
+                }
             }
         }
     }

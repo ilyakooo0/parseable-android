@@ -30,4 +30,10 @@ interface FavoriteStreamDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorite_streams WHERE streamName = :name)")
     fun isFavorite(name: String): Flow<Boolean>
+
+    // One-shot suspend variant. toggleFavorite() must decide insert-vs-delete from the
+    // committed DB state rather than the async-mirrored UI state, so rapid double-taps
+    // can't both observe a stale value and take the same branch.
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_streams WHERE streamName = :name)")
+    suspend fun isFavoriteNow(name: String): Boolean
 }

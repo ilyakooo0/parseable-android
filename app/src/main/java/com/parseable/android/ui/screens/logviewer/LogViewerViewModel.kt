@@ -100,6 +100,14 @@ class LogViewerViewModel @Inject constructor(
     @Volatile private var streamingGeneration: Int = 0
     @Volatile private var lastSeenTimestamp: String? = null
     @Volatile private var consecutiveStreamingErrors: Int = 0
+
+    // Identities of rows already surfaced during the current streaming session. Used to dedupe
+    // re-fetched boundary rows. Kept INDEPENDENT of the displayed `logs` list — which is capped
+    // at STREAMING_MAX_LOGS — so that under sustained high-volume streaming, boundary rows
+    // evicted from the view are still recognized as duplicates and not prepended twice.
+    // Insertion-ordered so the oldest keys are trimmed first. Touched only from the single
+    // streaming coroutine and from startStreaming (which first cancels that coroutine).
+    private val seenStreamingKeys = LinkedHashSet<String>()
     private var searchJob: Job? = null
     private var schemaJob: Job? = null
     private var refreshJob: Job? = null
@@ -108,6 +116,9 @@ class LogViewerViewModel @Inject constructor(
         private const val STREAMING_BASE_INTERVAL_MS = 3000L
         private const val STREAMING_MAX_INTERVAL_MS = 30000L
         private const val STREAMING_MAX_LOGS = 1000
+        // Remember more identities than the display cap so a row evicted from the view is still
+        // deduped on a later re-fetch. 2x the display cap covers the worst realistic overlap.
+        private const val SEEN_STREAMING_KEYS_MAX = STREAMING_MAX_LOGS * 2
         private const val MAX_LOAD_LIMIT = 5000
         private const val LOAD_MORE_INCREMENT = 500
         private const val MAX_STREAMING_ERRORS = 5
@@ -421,6 +432,12 @@ class LogViewerViewModel @Inject constructor(
             it.copy(streaming = StreamingState(isStreaming = true, streamingNewCount = 0))
         }
 
+        // Seed the dedup set with the rows already on screen so an initial row sitting exactly
+        // on the streaming baseline timestamp can't be re-fetched and duplicated.
+        seenStreamingKeys.clear()
+        _state.value.logs.forEach { seenStreamingKeys.add(logIdentity(it)) }
+        trimSeenStreamingKeys()
+
         // Set the baseline timestamp to "now" so we only poll for new logs
         lastSeenTimestamp = ZonedDateTime.now(ZoneOffset.UTC).format(dateFormatter)
 
@@ -463,6 +480,18 @@ class LogViewerViewModel @Inject constructor(
      * distinct logs that happen to share a timestamp/metadata/tags are not dropped.
      */
     private fun logIdentity(log: JsonObject): String = log.toString()
+
+    /** Bound the dedup set, evicting the oldest identities first (insertion order). */
+    private fun trimSeenStreamingKeys() {
+        if (seenStreamingKeys.size <= SEEN_STREAMING_KEYS_MAX) return
+        val iterator = seenStreamingKeys.iterator()
+        var toRemove = seenStreamingKeys.size - SEEN_STREAMING_KEYS_MAX
+        while (toRemove > 0 && iterator.hasNext()) {
+            iterator.next()
+            iterator.remove()
+            toRemove--
+        }
+    }
 
     private suspend fun pollNewLogs() {
         val current = _state.value
@@ -528,15 +557,19 @@ class LogViewerViewModel @Inject constructor(
                         lastSeenTimestamp = boundaryTimestamp
                     }
 
-                    _state.update { state ->
-                        // The query's startTime is inclusive, so logs sitting on the
-                        // previous boundary timestamp get re-fetched. Drop anything
-                        // already present to avoid duplicate rows and an inflated count.
-                        val existingKeys = state.logs.mapTo(HashSet(state.logs.size)) { logIdentity(it) }
-                        val freshLogs = newLogs.filter { logIdentity(it) !in existingKeys }
-                        if (freshLogs.isEmpty()) {
-                            state.copy(streaming = state.streaming.copy(streamingError = null))
-                        } else {
+                    // The query's startTime is inclusive, so rows sitting on the previous
+                    // boundary timestamp get re-fetched. Dedup against everything seen this
+                    // session (independent of the display cap) to avoid duplicate rows and an
+                    // inflated count. Computed BEFORE the state update — and the seen-set
+                    // mutated here, not inside the update lambda, which may re-run.
+                    val freshLogs = newLogs.filterNot { logIdentity(it) in seenStreamingKeys }
+                    newLogs.forEach { seenStreamingKeys.add(logIdentity(it)) }
+                    trimSeenStreamingKeys()
+
+                    if (freshLogs.isEmpty()) {
+                        _state.update { it.copy(streaming = it.streaming.copy(streamingError = null)) }
+                    } else {
+                        _state.update { state ->
                             // Prepend new logs, cap total — avoid full intermediate list allocation
                             val remaining = (STREAMING_MAX_LOGS - freshLogs.size).coerceAtLeast(0)
                             val capped = ArrayList<JsonObject>(freshLogs.size + remaining).apply {
@@ -549,12 +582,12 @@ class LogViewerViewModel @Inject constructor(
                                 logKeys = computeLogKeys(capped),
                                 streaming = state.streaming.copy(
                                     // Cap the badge at the visible list size: rows evicted by the
-                                // display cap aren't in the list, so counting them would make
-                                // the "+N new" badge climb past what's actually shown.
-                                streamingNewCount = minOf(
-                                    state.streaming.streamingNewCount + freshLogs.size,
-                                    capped.size,
-                                ),
+                                    // display cap aren't in the list, so counting them would make
+                                    // the "+N new" badge climb past what's actually shown.
+                                    streamingNewCount = minOf(
+                                        state.streaming.streamingNewCount + freshLogs.size,
+                                        capped.size,
+                                    ),
                                     streamingError = null,
                                 ),
                             )

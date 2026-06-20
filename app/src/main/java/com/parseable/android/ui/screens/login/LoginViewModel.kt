@@ -63,7 +63,16 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             val config = settingsRepository.getSavedPassword()
             if (config == null) {
-                _state.update { it.copy(isLoading = false) }
+                // URL/username are present but the saved password can't be read (e.g. the
+                // Keystore entry was lost). Surface this instead of silently stopping the
+                // spinner, and hide the now-useless "use saved credentials" button.
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        hasSavedCredentials = false,
+                        error = "Saved credentials could not be read. Please log in again.",
+                    )
+                }
                 return@launch
             }
             // Restore the saved URL/username so the saved password is paired with the
@@ -187,9 +196,20 @@ class LoginViewModel @Inject constructor(
                 // Uses verifyServer() to avoid triggering the global auth-error handler.
                 when (val aboutResult = repository.verifyServer()) {
                     is ApiResult.Success -> {
-                        settingsRepository.saveServerConfig(config)
-                        settingsRepository.saveServer(config)
-                        _state.update { it.copy(isLoading = false, loginSuccess = true, password = "") }
+                        // Only report success if the credentials were durably persisted.
+                        // Otherwise the app would navigate in and clear the typed password,
+                        // yet bounce back to login on next launch with nothing to restore.
+                        if (settingsRepository.saveServerConfig(config)) {
+                            settingsRepository.saveServer(config)
+                            _state.update { it.copy(isLoading = false, loginSuccess = true, password = "") }
+                        } else {
+                            _state.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = "Connected, but your credentials couldn't be saved securely on this device. Please try again.",
+                                )
+                            }
+                        }
                     }
                     is ApiResult.Error -> {
                         val errorMsg = if (aboutResult.isUnauthorized) {
