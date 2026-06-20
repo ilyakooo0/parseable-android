@@ -84,8 +84,8 @@ class SettingsViewModel @Inject constructor(
 
                 val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
                     try {
-                        obj["id"]?.jsonPrimitive?.content
-                            ?: obj["username"]?.jsonPrimitive?.content
+                        obj["username"]?.jsonPrimitive?.content
+                            ?: obj["id"]?.jsonPrimitive?.content
                     } catch (_: IllegalStateException) {
                         null
                     }

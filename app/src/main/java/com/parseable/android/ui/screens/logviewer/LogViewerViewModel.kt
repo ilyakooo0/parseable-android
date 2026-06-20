@@ -247,8 +247,11 @@ class LogViewerViewModel @Inject constructor(
             _state.update { it.copy(error = "Only SELECT queries are allowed") }
             return
         }
-        // Enforce a LIMIT to prevent OOM from unbounded queries
-        val safeSql = if (!trimmed.uppercase().contains("LIMIT")) {
+        // Enforce a LIMIT to prevent OOM from unbounded queries. Match an actual
+        // `LIMIT <n>` clause rather than the bare word, so a string literal like
+        // 'LIMIT EXCEEDED' doesn't disable the safety limit.
+        val hasLimit = Regex("(?i)\\bLIMIT\\s+\\d+").containsMatchIn(trimmed)
+        val safeSql = if (!hasLimit) {
             "$trimmed LIMIT $MAX_LOAD_LIMIT"
         } else {
             trimmed
@@ -266,7 +269,10 @@ class LogViewerViewModel @Inject constructor(
                             logs = result.data,
                             logKeys = keys,
                             isLoading = false,
-                            hasMore = result.data.size >= it.currentLimit,
+                            // Custom SQL carries its own LIMIT and isn't paginated via
+                            // loadMore(); leaving hasMore set would let scroll-to-load
+                            // overwrite these results with the default filter query.
+                            hasMore = false,
                         )
                     }
                 }
@@ -431,6 +437,14 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
+    /** Content-based identity for a log row, used to dedupe re-fetched boundary logs. */
+    private fun logIdentity(log: JsonObject): String {
+        val ts = log["p_timestamp"]?.toString()
+        val meta = log["p_metadata"]?.toString()
+        val tag = log["p_tags"]?.toString()
+        return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
+    }
+
     private suspend fun pollNewLogs() {
         val current = _state.value
         if (current.streamName.isEmpty()) return
@@ -443,6 +457,8 @@ class LogViewerViewModel @Inject constructor(
         if (current.filters.searchQuery.isNotBlank()) {
             val searchClause = buildSearchClause(current.searchableColumns, current.filters.searchQuery)
             if (searchClause != null) {
+                // Parenthesize: the search clause is OR-joined and must not break the
+                // precedence of the AND-joined filter clauses around it.
                 clauses.add("($searchClause)")
             }
         }
@@ -467,21 +483,30 @@ class LogViewerViewModel @Inject constructor(
                     }
 
                     _state.update { state ->
-                        // Prepend new logs, cap total — avoid full intermediate list allocation
-                        val remaining = (STREAMING_MAX_LOGS - newLogs.size).coerceAtLeast(0)
-                        val capped = ArrayList<JsonObject>(newLogs.size + remaining).apply {
-                            addAll(newLogs)
-                            val oldLogs = state.logs
-                            addAll(oldLogs.subList(0, remaining.coerceAtMost(oldLogs.size)))
+                        // The query's startTime is inclusive, so logs sitting on the
+                        // previous boundary timestamp get re-fetched. Drop anything
+                        // already present to avoid duplicate rows and an inflated count.
+                        val existingKeys = state.logs.mapTo(HashSet(state.logs.size)) { logIdentity(it) }
+                        val freshLogs = newLogs.filter { logIdentity(it) !in existingKeys }
+                        if (freshLogs.isEmpty()) {
+                            state.copy(streaming = state.streaming.copy(streamingError = null))
+                        } else {
+                            // Prepend new logs, cap total — avoid full intermediate list allocation
+                            val remaining = (STREAMING_MAX_LOGS - freshLogs.size).coerceAtLeast(0)
+                            val capped = ArrayList<JsonObject>(freshLogs.size + remaining).apply {
+                                addAll(freshLogs)
+                                val oldLogs = state.logs
+                                addAll(oldLogs.subList(0, remaining.coerceAtMost(oldLogs.size)))
+                            }
+                            state.copy(
+                                logs = capped,
+                                logKeys = computeLogKeys(capped),
+                                streaming = state.streaming.copy(
+                                    streamingNewCount = state.streaming.streamingNewCount + freshLogs.size,
+                                    streamingError = null,
+                                ),
+                            )
                         }
-                        state.copy(
-                            logs = capped,
-                            logKeys = computeLogKeys(capped),
-                            streaming = state.streaming.copy(
-                                streamingNewCount = state.streaming.streamingNewCount + newLogs.size,
-                                streamingError = null,
-                            ),
-                        )
                     }
                 }
                 consecutiveStreamingErrors = 0
