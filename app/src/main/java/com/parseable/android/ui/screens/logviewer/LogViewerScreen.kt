@@ -355,16 +355,18 @@ fun LogViewerScreen(
                         context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     }
 
-                    // Auto-load more when scrolling near the bottom
-                    if (state.hasMore && !state.isLoading) {
-                        val shouldLoadMore by remember {
-                            derivedStateOf {
-                                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                                lastVisible >= listState.layoutInfo.totalItemsCount - 5
-                            }
+                    // Auto-load more when scrolling near the bottom. The derived state and
+                    // effect live outside any conditional so they are never disposed and
+                    // re-created mid-load (which could re-trigger loadMore in a loop).
+                    val shouldLoadMore by remember {
+                        derivedStateOf {
+                            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            lastVisible >= listState.layoutInfo.totalItemsCount - 5
                         }
-                        LaunchedEffect(shouldLoadMore) {
-                            if (shouldLoadMore) viewModel.loadMore()
+                    }
+                    LaunchedEffect(shouldLoadMore, state.hasMore, state.isLoading) {
+                        if (shouldLoadMore && state.hasMore && !state.isLoading) {
+                            viewModel.loadMore()
                         }
                     }
 

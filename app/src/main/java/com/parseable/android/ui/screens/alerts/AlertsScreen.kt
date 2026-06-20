@@ -104,7 +104,8 @@ fun AlertsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: "alert_$index" }) { _, alert ->
+                    itemsIndexed(state.alerts, key = { index, alert -> "${alert.id ?: alert.name ?: "alert"}_$index" }) { _, alert ->
+
                         AlertCard(
                             alert = alert,
                             onDelete = if (alert.id != null) {

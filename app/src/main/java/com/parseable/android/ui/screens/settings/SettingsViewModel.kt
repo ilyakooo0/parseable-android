@@ -9,6 +9,7 @@ import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,8 @@ class SettingsViewModel @Inject constructor(
     private val _switchEvent = MutableStateFlow<Long?>(null)
     val switchEvent: StateFlow<Long?> = _switchEvent.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         load()
         viewModelScope.launch {
@@ -61,7 +64,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun load() {
-        viewModelScope.launch {
+        // Cancel any in-flight load so a slower completion can't overwrite a newer one.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
             val config = settingsRepository.serverConfig.first()

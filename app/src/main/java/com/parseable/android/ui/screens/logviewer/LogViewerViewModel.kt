@@ -101,6 +101,7 @@ class LogViewerViewModel @Inject constructor(
     @Volatile private var consecutiveStreamingErrors: Int = 0
     private var searchJob: Job? = null
     private var schemaJob: Job? = null
+    private var refreshJob: Job? = null
 
     companion object {
         private const val STREAMING_BASE_INTERVAL_MS = 3000L
@@ -297,7 +298,10 @@ class LogViewerViewModel @Inject constructor(
     fun refresh() {
         if (_state.value.streamName.isEmpty()) return
 
-        viewModelScope.launch {
+        // Cancel any in-flight query so out-of-order completions can't overwrite
+        // fresh results with stale ones (filter/search/time-range/loadMore all call refresh()).
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             _state.update {
                 it.copy(
                     isLoading = true,
@@ -355,6 +359,9 @@ class LogViewerViewModel @Inject constructor(
 
     fun loadMore() {
         val current = _state.value
+        // While live-tailing, logs are prepended in memory; a refresh() here would replace
+        // them with a fresh page and drop the streamed rows. Pagination resumes once stopped.
+        if (current.streaming.isStreaming) return
         if (current.currentLimit >= MAX_LOAD_LIMIT) {
             _state.update { it.copy(hasMore = false) }
             return
@@ -437,13 +444,12 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
-    /** Content-based identity for a log row, used to dedupe re-fetched boundary logs. */
-    private fun logIdentity(log: JsonObject): String {
-        val ts = log["p_timestamp"]?.toString()
-        val meta = log["p_metadata"]?.toString()
-        val tag = log["p_tags"]?.toString()
-        return if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
-    }
+    /**
+     * Content-based identity for a log row, used to dedupe re-fetched boundary logs.
+     * Uses the full row: two rows are duplicates only when every field matches, so
+     * distinct logs that happen to share a timestamp/metadata/tags are not dropped.
+     */
+    private fun logIdentity(log: JsonObject): String = log.toString()
 
     private suspend fun pollNewLogs() {
         val current = _state.value

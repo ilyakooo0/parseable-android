@@ -20,6 +20,11 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): ParseableDatabase =
         Room.databaseBuilder(context, ParseableDatabase::class.java, "parseable.db")
+            // Favorites are a rebuildable convenience cache, so a destructive fallback is an
+            // acceptable last resort. IMPORTANT: any future schema bump that should PRESERVE
+            // favorites must register a real Migration via .addMigrations(...) — otherwise this
+            // fallback will silently drop the table on upgrade. Exported schemas (see
+            // ParseableDatabase, exportSchema = true) provide the diffs needed to write them.
             .fallbackToDestructiveMigration()
             .build()
 

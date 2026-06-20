@@ -77,11 +77,18 @@ class ParseableApiClient @Inject constructor() {
 
     fun configure(serverConfig: ServerConfig) {
         val url = serverConfig.serverUrl.trimEnd('/')
-        val credentials = "${serverConfig.username}:${serverConfig.password}"
-        val auth = "Basic " + android.util.Base64.encodeToString(
-            credentials.toByteArray(),
-            android.util.Base64.NO_WRAP
-        )
+        // Leave the auth header empty for blank credentials so isConfigured() reports
+        // false instead of silently sending a bogus "Basic <user:>" header.
+        val auth = if (serverConfig.username.isBlank() && serverConfig.password.isBlank()) {
+            ""
+        } else {
+            val credentials = "${serverConfig.username}:${serverConfig.password}"
+            "Basic " + android.util.Base64.encodeToString(
+                // Explicit UTF-8 per RFC 7617 rather than the platform default charset.
+                credentials.toByteArray(Charsets.UTF_8),
+                android.util.Base64.NO_WRAP
+            )
+        }
         config = ClientConfig(
             baseUrl = url,
             authHeader = auth,
