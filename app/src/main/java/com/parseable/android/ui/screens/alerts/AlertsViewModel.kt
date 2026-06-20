@@ -28,6 +28,11 @@ class AlertsViewModel @Inject constructor(
     private val _state = MutableStateFlow(AlertsState())
     val state: StateFlow<AlertsState> = _state.asStateFlow()
 
+    init {
+        // Load once on creation; the screen no longer refreshes on every RESUME.
+        refresh()
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }

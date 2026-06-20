@@ -62,7 +62,9 @@ class MainActivity : ComponentActivity() {
                             repository.authErrors
                                 .onEach {
                                     settingsRepository.clearConfig()
-                                    errorHandler.showError("Session expired. Please log in again.")
+                                    // The login screen shows the "session expired" message
+                                    // itself via the sessionExpired flag; showing it here too
+                                    // would queue a duplicate snackbar.
                                     navController.navigate(Routes.login(sessionExpired = true)) {
                                         popUpTo(0) { inclusive = true }
                                     }

@@ -57,6 +57,18 @@ class LoginViewModel @Inject constructor(
     fun loginWithSavedCredentials() {
         viewModelScope.launch {
             val config = settingsRepository.getSavedPassword() ?: return@launch
+            // Restore the saved URL/username so the saved password is paired with the
+            // server/user it was saved for, even if the user edited those fields.
+            _state.update {
+                it.copy(
+                    serverUrl = config.serverUrl,
+                    username = config.username,
+                    allowInsecure = !config.useTls,
+                    serverUrlError = null,
+                    usernameError = null,
+                    passwordError = null,
+                )
+            }
             performLogin(config.password)
         }
     }

@@ -14,10 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import com.parseable.android.data.formatBytes
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -35,11 +32,10 @@ fun StreamInfoScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(streamName, lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.load(streamName)
-        }
+    // Load once per stream. Reloading on every RESUME would refetch all four endpoints on
+    // each return and could re-query a stream that was just deleted (spurious error card).
+    LaunchedEffect(streamName) {
+        viewModel.load(streamName)
     }
 
     LaunchedEffect(state.deleteSuccess) {
@@ -94,7 +90,13 @@ fun StreamInfoScreen(
                 // Stats section
                 state.stats?.let { stats ->
                     InfoSection(title = "Statistics") {
-                        InfoRow("Event Count", stats.ingestion?.count?.toString() ?: stats.ingestion?.lifetimeCount?.toString() ?: "N/A")
+                        // Show the current-window count when available. Fall back to "N/A"
+                        // only when there's no lifetime count either — otherwise the lifetime
+                        // figure is shown in its own row below, so don't duplicate it here.
+                        when {
+                            stats.ingestion?.count != null -> InfoRow("Event Count", stats.ingestion.count.toString())
+                            stats.ingestion?.lifetimeCount == null -> InfoRow("Event Count", "N/A")
+                        }
                         InfoRow("Ingestion Size", formatBytes(stats.ingestion?.size) ?: formatBytes(stats.ingestion?.lifetimeSize) ?: "N/A")
                         InfoRow("Storage Size", formatBytes(stats.storage?.size) ?: formatBytes(stats.storage?.lifetimeSize) ?: "N/A")
                         if (stats.ingestion?.lifetimeCount != null) {

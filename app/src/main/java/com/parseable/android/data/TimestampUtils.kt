@@ -4,8 +4,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-private val displayFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS")
+// Pin to Locale.US so the MMM month token is always rendered as a stable English
+// abbreviation (e.g. "Jun") regardless of the device's locale.
+private val displayFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS", Locale.US)
 
 fun formatTimestamp(raw: String): String {
     return try {

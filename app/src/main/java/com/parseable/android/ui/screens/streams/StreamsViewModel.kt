@@ -61,6 +61,9 @@ class StreamsViewModel @Inject constructor(
                 _state.update { it.copy(favoriteNames = names.toSet()) }
             }
         }
+        // Load once when the ViewModel is created. The screen no longer refreshes on every
+        // RESUME, so returning via back-navigation reuses the already-loaded data.
+        refresh()
     }
 
     fun toggleFavorite(streamName: String) {
@@ -93,9 +96,14 @@ class StreamsViewModel @Inject constructor(
 
                 when (streamsResult) {
                     is ApiResult.Success -> {
+                        // Prune cached stats/failures for streams that no longer exist so
+                        // deleted or recreated streams don't show stale numbers.
+                        val names = streamsResult.data.mapTo(HashSet()) { it.name }
                         _state.update {
                             it.copy(
                                 streams = streamsResult.data.sortedBy { s -> s.name.lowercase() },
+                                streamStats = it.streamStats.filterKeys { name -> name in names },
+                                failedStats = it.failedStats.filterTo(mutableSetOf()) { name -> name in names },
                                 isLoading = false,
                             )
                         }

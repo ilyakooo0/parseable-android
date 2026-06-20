@@ -96,17 +96,17 @@ class SettingsViewModel @Inject constructor(
                     }
                 } ?: emptyList()
 
-                val errors = listOfNotNull(
-                    (aboutResult as? ApiResult.Error)?.userMessage,
-                    (usersResult as? ApiResult.Error)?.userMessage,
-                ).distinct().joinToString("\n").ifEmpty { null }
+                // Only treat a failure of the primary server-info call (/about) as a blocking
+                // error. The user list (/user) is secondary and is commonly forbidden for
+                // restricted accounts — failing it shouldn't hide otherwise-valid server info.
+                val error = (aboutResult as? ApiResult.Error)?.userMessage
 
                 _state.update {
                     it.copy(
                         aboutInfo = (aboutResult as? ApiResult.Success)?.data,
                         users = userNames,
                         isLoading = false,
-                        error = errors,
+                        error = error,
                     )
                 }
             } catch (e: CancellationException) {

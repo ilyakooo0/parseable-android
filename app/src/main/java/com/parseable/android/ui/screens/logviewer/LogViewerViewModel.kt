@@ -179,7 +179,8 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun onSearchQueryChange(query: String) {
-        _state.update { it.copy(filters = it.filters.copy(searchQuery = query, isSearching = query.isNotBlank())) }
+        // Searching returns to the filter-builder query path, so drop any active custom SQL.
+        _state.update { it.copy(filters = it.filters.copy(searchQuery = query, customSql = "", isSearching = query.isNotBlank())) }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300)
@@ -211,6 +212,7 @@ class LogViewerViewModel @Inject constructor(
                 filters = it.filters.copy(
                     filterClauses = it.filters.filterClauses + clause,
                     activeFilters = it.filters.activeFilters + display,
+                    customSql = "",
                 ),
             )
         }
@@ -226,6 +228,7 @@ class LogViewerViewModel @Inject constructor(
                     filters = it.filters.copy(
                         activeFilters = it.filters.activeFilters.filterIndexed { i, _ -> i != index },
                         filterClauses = it.filters.filterClauses.filterIndexed { i, _ -> i != index },
+                        customSql = "",
                     ),
                 )
             } else {
@@ -237,7 +240,7 @@ class LogViewerViewModel @Inject constructor(
 
     fun clearFilters() {
         _state.update {
-            it.copy(filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList()))
+            it.copy(filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), customSql = ""))
         }
         refresh()
     }
@@ -257,33 +260,11 @@ class LogViewerViewModel @Inject constructor(
         } else {
             trimmed
         }
+        // Store the custom SQL and let refresh() run it. Keeping it in state means
+        // pull-to-refresh / time-range changes re-run the custom query instead of
+        // silently replacing it with the default filter query.
         _state.update { it.copy(filters = it.filters.copy(customSql = safeSql), currentLimit = 500) }
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-
-            val (startTime, endTime) = getTimeRange()
-            when (val result = repository.queryLogsRaw(safeSql, startTime, endTime)) {
-                is ApiResult.Success -> {
-                    val keys = computeLogKeys(result.data)
-                    _state.update {
-                        it.copy(
-                            logs = result.data,
-                            logKeys = keys,
-                            isLoading = false,
-                            // Custom SQL carries its own LIMIT and isn't paginated via
-                            // loadMore(); leaving hasMore set would let scroll-to-load
-                            // overwrite these results with the default filter query.
-                            hasMore = false,
-                        )
-                    }
-                }
-                is ApiResult.Error -> {
-                    _state.update {
-                        it.copy(isLoading = false, error = result.userMessage)
-                    }
-                }
-            }
-        }
+        refresh()
     }
 
     private fun buildSearchClause(searchableColumns: List<String>, searchQuery: String): String? {
@@ -314,6 +295,20 @@ class LogViewerViewModel @Inject constructor(
             val current = _state.value
             val (startTime, endTime) = getTimeRange()
 
+            // A custom SQL query owns the whole statement (its own LIMIT, columns, ordering),
+            // so re-run it verbatim. It is not paginated via loadMore(), hence hasMore = false.
+            if (current.filters.customSql.isNotBlank()) {
+                when (val result = repository.queryLogsRaw(current.filters.customSql, startTime, endTime)) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(logs = result.data, logKeys = computeLogKeys(result.data), isLoading = false, hasMore = false) }
+                    }
+                    is ApiResult.Error -> {
+                        _state.update { it.copy(isLoading = false, error = result.userMessage) }
+                    }
+                }
+                return@launch
+            }
+
             // Build WHERE clause from filters + search
             val clauses = current.filters.filterClauses.toMutableList()
             if (current.filters.searchQuery.isNotBlank()) {
@@ -330,22 +325,26 @@ class LogViewerViewModel @Inject constructor(
 
             val filterSql = clauses.joinToString(" AND ")
 
+            // Over-fetch by one row so we can distinguish "exactly currentLimit rows exist"
+            // (no more pages) from "the page is full and more may exist" without firing a
+            // wasted extra query the next time the user scrolls to the bottom.
+            val requestLimit = current.currentLimit + 1
             when (val result = repository.queryLogs(
                 stream = current.streamName,
                 startTime = startTime,
                 endTime = endTime,
                 filterSql = filterSql,
-                limit = current.currentLimit,
+                limit = requestLimit,
             )) {
                 is ApiResult.Success -> {
-                    val keys = computeLogKeys(result.data)
+                    val hasMore = result.data.size > current.currentLimit && current.currentLimit < MAX_LOAD_LIMIT
+                    val logs = if (result.data.size > current.currentLimit) {
+                        result.data.take(current.currentLimit)
+                    } else {
+                        result.data
+                    }
                     _state.update {
-                        it.copy(
-                            logs = result.data,
-                            logKeys = keys,
-                            isLoading = false,
-                            hasMore = result.data.size >= it.currentLimit,
-                        )
+                        it.copy(logs = logs, logKeys = computeLogKeys(logs), isLoading = false, hasMore = hasMore)
                     }
                 }
                 is ApiResult.Error -> {
@@ -471,7 +470,11 @@ class LogViewerViewModel @Inject constructor(
 
         val whereClause = if (clauses.isNotEmpty()) " WHERE ${clauses.joinToString(" AND ")}" else ""
         val safeName = escapeIdentifier(current.streamName)
-        val sql = "SELECT * FROM \"$safeName\"$whereClause ORDER BY p_timestamp DESC LIMIT 200"
+        // Fetch up to the in-memory display cap. With a small limit (e.g. 200), a burst of
+        // more than that many logs in one interval would advance lastSeenTimestamp past the
+        // un-fetched rows and drop them permanently. Capping at STREAMING_MAX_LOGS means we
+        // never skip rows we'd actually keep (anything older is evicted by the cap anyway).
+        val sql = "SELECT * FROM \"$safeName\"$whereClause ORDER BY p_timestamp DESC LIMIT $STREAMING_MAX_LOGS"
 
         when (val result = repository.queryLogsRaw(sql, startTime, endTime)) {
             is ApiResult.Success -> {
