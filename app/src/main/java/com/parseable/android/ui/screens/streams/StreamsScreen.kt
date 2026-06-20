@@ -52,7 +52,11 @@ fun StreamsScreen(
         }
         // Partition by favorites instead of full sort for O(n) vs O(n log n)
         val (favs, rest) = filtered.partition { it.name in favorites }
-        favs + rest
+        // `favorites` iterates most-recently-favorited first (DAO ORDER BY addedAt DESC
+        // preserved through LinkedHashSet); order favs to match so recency is reflected.
+        val favRank = favorites.withIndex().associate { (i, name) -> name to i }
+        val sortedFavs = favs.sortedBy { favRank[it.name] ?: Int.MAX_VALUE }
+        sortedFavs + rest
     }
 
     LaunchedEffect(Unit) {

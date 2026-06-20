@@ -12,6 +12,8 @@ interface FavoriteStreamDao {
     @Query("SELECT * FROM favorite_streams ORDER BY addedAt DESC")
     fun getAll(): Flow<List<FavoriteStream>>
 
+    // Ordered most-recently-favorited first so the UI can show favorites in recency order
+    // (toSet() downstream preserves this iteration order via LinkedHashSet).
     @Query("SELECT streamName FROM favorite_streams ORDER BY addedAt DESC")
     fun getAllNames(): Flow<List<String>>
 

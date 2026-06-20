@@ -479,6 +479,19 @@ class LogViewerViewModel @Inject constructor(
                 // Parenthesize: the search clause is OR-joined and must not break the
                 // precedence of the AND-joined filter clauses around it.
                 clauses.add("($searchClause)")
+            } else {
+                // Schema not loaded yet, so we can't build the search filter. Skip this
+                // poll rather than querying without it — otherwise we'd prepend rows that
+                // don't match the active search into a filtered view. Mirrors refresh(),
+                // which errors out instead of running an unfiltered query.
+                _state.update {
+                    it.copy(
+                        streaming = it.streaming.copy(
+                            streamingError = "Search unavailable: stream schema not loaded",
+                        ),
+                    )
+                }
+                return
             }
         }
 

@@ -61,6 +61,13 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(navController) {
                             repository.authErrors
                                 .onEach {
+                                    // Several parallel requests can each surface a 401 in quick
+                                    // succession. Skip re-navigating (and re-clearing) when we're
+                                    // already on the login screen, so a burst can't thrash the
+                                    // back stack or re-trigger the "session expired" message.
+                                    val onLogin = navController.currentDestination
+                                        ?.route?.startsWith(Routes.LOGIN) == true
+                                    if (onLogin) return@onEach
                                     settingsRepository.clearConfig()
                                     // The login screen shows the "session expired" message
                                     // itself via the sessionExpired flag; showing it here too
