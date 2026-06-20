@@ -12,6 +12,9 @@ private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
 fun formatBytes(raw: String?): String? {
     if (raw == null) return null
     val bytes = raw.trim().toDoubleOrNull() ?: return raw
+    // toDoubleOrNull accepts "NaN"/"Infinity"; those slip past the range guards below and
+    // would format as "NaN B" / "Infinity PB". Pass them through unchanged instead.
+    if (!bytes.isFinite()) return raw
     if (bytes < 0) return raw
     if (bytes < 1024) return String.format(Locale.US, "%.0f B", bytes)
     var value = bytes

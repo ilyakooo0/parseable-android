@@ -100,6 +100,10 @@ class LogViewerViewModel @Inject constructor(
     @Volatile private var streamingGeneration: Int = 0
     @Volatile private var lastSeenTimestamp: String? = null
     @Volatile private var consecutiveStreamingErrors: Int = 0
+    // True while the log list is scrolled to the top. New rows prepend at the top, so when the
+    // user is already there they see them live and the "+N new" badge must stay at 0. The badge
+    // only accumulates while the user is scrolled away, and resets when they return to the top.
+    @Volatile private var viewingTop: Boolean = true
 
     // Identities of rows already surfaced during the current streaming session. Used to dedupe
     // re-fetched boundary rows. Kept INDEPENDENT of the displayed `logs` list — which is capped
@@ -131,10 +135,13 @@ class LogViewerViewModel @Inject constructor(
         internal fun computeLogKeys(logs: List<JsonObject>): List<String> {
             val seen = mutableMapOf<String, Int>()
             return logs.map { log ->
-                val ts = log["p_timestamp"]?.toString()
-                val meta = log["p_metadata"]?.toString()
-                val tag = log["p_tags"]?.toString()
-                val base = if (ts != null) "$ts|${meta.orEmpty()}|${tag.orEmpty()}" else log.hashCode().toString()
+                // Key on the full row content (same identity used for streaming dedup, see
+                // logIdentity). Keying on only p_timestamp/p_metadata/p_tags collided for rows
+                // sharing those fields but differing in body, so the positional tiebreaker made
+                // keys shift when streaming prepended rows — corrupting expanded state and
+                // letting remember(stableKey) blocks render a stale body. The trailing counter
+                // only disambiguates genuinely identical rows, whose rendering is identical too.
+                val base = log.toString()
                 val count = seen.getOrDefault(base, 0)
                 seen[base] = count + 1
                 if (count == 0) base else "$base|$count"
@@ -416,6 +423,17 @@ class LogViewerViewModel @Inject constructor(
         )
     }
 
+    /**
+     * Report whether the log list is scrolled to the top. Clears the "+N new" streaming badge
+     * when the user returns to the top, since prepended rows there are seen immediately.
+     */
+    fun setViewingTop(atTop: Boolean) {
+        viewingTop = atTop
+        if (atTop && _state.value.streaming.streamingNewCount != 0) {
+            _state.update { it.copy(streaming = it.streaming.copy(streamingNewCount = 0)) }
+        }
+    }
+
     fun toggleStreaming() {
         if (_state.value.streaming.isStreaming) {
             stopStreaming()
@@ -581,13 +599,15 @@ class LogViewerViewModel @Inject constructor(
                                 logs = capped,
                                 logKeys = computeLogKeys(capped),
                                 streaming = state.streaming.copy(
-                                    // Cap the badge at the visible list size: rows evicted by the
-                                    // display cap aren't in the list, so counting them would make
-                                    // the "+N new" badge climb past what's actually shown.
-                                    streamingNewCount = minOf(
-                                        state.streaming.streamingNewCount + freshLogs.size,
-                                        capped.size,
-                                    ),
+                                    // Accumulate new rows while the user is scrolled away; reset
+                                    // to 0 when they're at the top (where prepended rows are seen
+                                    // live). The previous cap was against total list size, so the
+                                    // badge saturated at the display cap and never cleared.
+                                    streamingNewCount = if (viewingTop) {
+                                        0
+                                    } else {
+                                        state.streaming.streamingNewCount + freshLogs.size
+                                    },
                                     streamingError = null,
                                 ),
                             )

@@ -36,11 +36,16 @@ fun StreamsScreen(
 
     val listState = rememberLazyListState()
 
-    // Scroll to top when a refresh completes (isLoading transitions to false)
+    // Scroll to top only when a refresh actually completes (isLoading transitions true -> false
+    // while composed). Keying solely on isLoading also fired on return-to-screen and on the
+    // initial composition, yanking the list to the top and discarding the user's restored
+    // scroll position. Tracking the previous value limits the jump to genuine refresh events.
+    var wasLoading by remember { mutableStateOf(false) }
     LaunchedEffect(state.isLoading) {
-        if (!state.isLoading) {
+        if (wasLoading && !state.isLoading) {
             listState.scrollToItem(0)
         }
+        wasLoading = state.isLoading
     }
 
     val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {

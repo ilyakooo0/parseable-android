@@ -6,6 +6,7 @@ import com.parseable.android.data.model.Alert
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,8 +59,12 @@ class AlertsViewModel @Inject constructor(
         _state.update { it.copy(alertToDelete = null) }
     }
 
+    private var deleteJob: Job? = null
+
     fun deleteAlert(alertId: String) {
-        viewModelScope.launch {
+        // Guard against a double-tap on the confirm button firing two concurrent DELETEs.
+        if (deleteJob?.isActive == true) return
+        deleteJob = viewModelScope.launch {
             _state.update { it.copy(alertToDelete = null, isLoading = true, error = null) }
             when (val result = repository.deleteAlert(alertId)) {
                 is ApiResult.Success -> refresh()

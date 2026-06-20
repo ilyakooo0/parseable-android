@@ -358,6 +358,15 @@ fun LogViewerScreen(
                         context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     }
 
+                    // Tell the ViewModel when the list is at the top so it can clear the live-tail
+                    // "+N new" badge — new rows prepend at the top and are seen immediately there.
+                    val atTop by remember {
+                        derivedStateOf {
+                            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                        }
+                    }
+                    LaunchedEffect(atTop) { viewModel.setViewingTop(atTop) }
+
                     // Auto-load more when scrolling near the bottom. The derived state and
                     // effect live outside any conditional so they are never disposed and
                     // re-created mid-load (which could re-trigger loadMore in a loop).
@@ -392,13 +401,17 @@ fun LogViewerScreen(
                                         // Collapsing: if the top of the entry is scrolled
                                         // above the viewport, jump to it so the user sees
                                         // the collapsed card instead of a random position.
+                                        // Resolve the row by its stable key, not the captured
+                                        // index — live-tail prepends shift every row's index,
+                                        // so the closed-over index can point at the wrong row.
                                         val itemInfo = listState.layoutInfo.visibleItemsInfo
-                                            .firstOrNull { it.index == index }
+                                            .firstOrNull { it.key == key }
                                         val needsScroll = itemInfo == null || itemInfo.offset < 0
                                         expandedLogKey = null
                                         if (needsScroll) {
+                                            val target = state.logKeys.indexOf(key).takeIf { it >= 0 } ?: index
                                             scope.launch {
-                                                listState.animateScrollToItem(index)
+                                                listState.animateScrollToItem(target)
                                             }
                                         }
                                     } else {

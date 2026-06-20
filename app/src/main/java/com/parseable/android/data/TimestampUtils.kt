@@ -14,9 +14,14 @@ import java.util.Locale
 private val displayFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS", Locale.US)
 
 fun formatTimestamp(raw: String): String {
+    // Parseable/DataFusion sometimes renders p_timestamp with a space between the date and
+    // time ("2026-06-20 12:00:00.000") instead of the ISO 'T'. Normalize that first space to
+    // 'T' so the parsers below accept it; values already in ISO form are left untouched.
+    val iso = if (' ' in raw && 'T' !in raw) raw.replaceFirst(' ', 'T') else raw
+
     // Fast path: an ISO-8601 instant in UTC (e.g. "2026-06-20T12:00:00Z").
     try {
-        val instant = Instant.parse(raw)
+        val instant = Instant.parse(iso)
         return ZonedDateTime.ofInstant(instant, ZoneId.systemDefault()).format(displayFormatter)
     } catch (_: Exception) {
         // Fall through to the offset-aware parser.
@@ -25,7 +30,7 @@ fun formatTimestamp(raw: String): String {
     // General path: any ISO-8601 timestamp carrying an explicit offset, including
     // "+00:00" and non-UTC offsets like "+05:30" that Instant.parse rejects.
     try {
-        val offset = OffsetDateTime.parse(raw)
+        val offset = OffsetDateTime.parse(iso)
         return offset.atZoneSameInstant(ZoneId.systemDefault()).format(displayFormatter)
     } catch (_: Exception) {
         // Fall through to the naive (offset-less) parser.
@@ -36,7 +41,7 @@ fun formatTimestamp(raw: String): String {
     // convert to the device's zone — otherwise these would render in UTC while
     // offset-carrying values render in local time, an inconsistent mix.
     try {
-        val local = LocalDateTime.parse(raw)
+        val local = LocalDateTime.parse(iso)
         return local.atOffset(ZoneOffset.UTC)
             .atZoneSameInstant(ZoneId.systemDefault())
             .format(displayFormatter)

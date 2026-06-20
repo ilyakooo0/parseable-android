@@ -156,7 +156,7 @@ data class Alert(
 
     /** Whether the alert is active, derived from either response format. */
     val isEnabled: Boolean get() = when {
-        state != null -> state != "Disabled"
+        state != null -> !state.equals("Disabled", ignoreCase = true)
         enabled != null -> enabled
         else -> true
     }

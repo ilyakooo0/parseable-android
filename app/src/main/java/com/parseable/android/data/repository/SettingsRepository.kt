@@ -144,7 +144,9 @@ class SettingsRepository @Inject constructor(
                     prefs.remove(activeServerIdKey)
                 }
                 withContext(Dispatchers.IO) {
-                    encryptedPrefs.edit().remove("password").apply()
+                    // commit() (not apply()) so the cleared password is durably gone before we
+                    // return — a queued async clear could survive into the next session.
+                    encryptedPrefs.edit().remove("password").commit()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to clear config")
@@ -173,8 +175,16 @@ class SettingsRepository @Inject constructor(
                 passwordKey = passwordKey,
                 addedAt = existing?.addedAt ?: System.currentTimeMillis(),
             )
-            withContext(Dispatchers.IO) {
-                encryptedPrefs.edit().putString(passwordKey, config.password).apply()
+            // Persist the password durably (commit + check) BEFORE inserting the row and
+            // marking it active. With apply() a crash could leave a saved-server row and an
+            // active-server-id pointing at a passwordKey that was never flushed, making the
+            // server unusable (switchToServer would return null).
+            val passwordSaved = withContext(Dispatchers.IO) {
+                encryptedPrefs.edit().putString(passwordKey, config.password).commit()
+            }
+            if (!passwordSaved) {
+                Timber.e("Failed to persist saved-server credentials securely; aborting saveServer")
+                return@withLock existing?.id ?: -1L
             }
             val id = savedServerDao.insert(server)
 
@@ -209,15 +219,22 @@ class SettingsRepository @Inject constructor(
                 useTls = server.useTls,
             )
 
+            // Persist the active password durably (commit + check) BEFORE updating the active
+            // DataStore config. With apply() a crash could leave the active URL/username pointing
+            // at a stale/missing password — the exact inconsistency saveServerConfig avoids.
+            val passwordSaved = withContext(Dispatchers.IO) {
+                encryptedPrefs.edit().putString("password", config.password).commit()
+            }
+            if (!passwordSaved) {
+                Timber.e("Failed to persist credentials securely; aborting server switch")
+                return@withLock null
+            }
             // Write to active config
             context.dataStore.edit { prefs ->
                 prefs[serverUrlKey] = config.serverUrl
                 prefs[usernameKey] = config.username
                 prefs[useTlsKey] = config.useTls
                 prefs[activeServerIdKey] = serverId
-            }
-            withContext(Dispatchers.IO) {
-                encryptedPrefs.edit().putString("password", config.password).apply()
             }
             config
         }
@@ -231,7 +248,9 @@ class SettingsRepository @Inject constructor(
         configMutex.withLock {
             val server = savedServerDao.getById(serverId) ?: return@withLock
             withContext(Dispatchers.IO) {
-                encryptedPrefs.edit().remove(server.passwordKey).apply()
+                // commit() so the password is durably removed before we drop the row that
+                // references its key — otherwise a crash could orphan the encrypted entry.
+                encryptedPrefs.edit().remove(server.passwordKey).commit()
             }
             savedServerDao.deleteById(serverId)
 
