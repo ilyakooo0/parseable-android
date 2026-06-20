@@ -167,6 +167,9 @@ fun LogViewerScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     keyboardController?.hide()
+                    // Stop live-tail first, like every other query entry point — otherwise
+                    // refresh() replaces the list while the poller keeps prepending onto it.
+                    viewModel.stopStreaming()
                     viewModel.refresh()
                 }),
                 modifier = Modifier

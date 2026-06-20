@@ -268,7 +268,14 @@ class ParseableApiClient @Inject constructor() {
                     ApiResult.Success(json.decodeFromString<List<RetentionConfig>>(result.data))
                 } catch (_: Exception) {
                     parseResponse(result.data, "retention config") {
-                        listOf(json.decodeFromString<RetentionConfig>(result.data))
+                        val single = json.decodeFromString<RetentionConfig>(result.data)
+                        // An empty object ({}) decodes into an all-null config — that means
+                        // "no retention configured" (zero rules), not one empty rule.
+                        if (single.description == null && single.duration == null && single.action == null) {
+                            emptyList()
+                        } else {
+                            listOf(single)
+                        }
                     }
                 }
             }

@@ -507,15 +507,25 @@ class LogViewerViewModel @Inject constructor(
             is ApiResult.Success -> {
                 val newLogs = result.data
                 if (newLogs.isNotEmpty()) {
-                    // Update the last seen timestamp to the most recent log
-                    val newestTimestamp = try {
+                    // Advance the last-seen boundary. Rows are ordered newest-first, so
+                    // normally we jump to the newest. But a full page means the LIMIT may
+                    // have capped off matching rows OLDER than the newest in this batch
+                    // (possible once filters/search narrow a high-volume stream) — advancing
+                    // to the newest would skip them forever. In that case advance only to the
+                    // oldest row we did fetch, so the next poll re-queries forward and closes
+                    // the gap (re-fetched rows are deduped below).
+                    val boundaryLog = if (newLogs.size >= STREAMING_MAX_LOGS) {
+                        newLogs.lastOrNull()
+                    } else {
                         newLogs.firstOrNull()
-                            ?.get("p_timestamp")?.jsonPrimitive?.content
+                    }
+                    val boundaryTimestamp = try {
+                        boundaryLog?.get("p_timestamp")?.jsonPrimitive?.content
                     } catch (_: Exception) {
                         null
                     }
-                    if (newestTimestamp != null) {
-                        lastSeenTimestamp = newestTimestamp
+                    if (boundaryTimestamp != null) {
+                        lastSeenTimestamp = boundaryTimestamp
                     }
 
                     _state.update { state ->
@@ -538,7 +548,13 @@ class LogViewerViewModel @Inject constructor(
                                 logs = capped,
                                 logKeys = computeLogKeys(capped),
                                 streaming = state.streaming.copy(
-                                    streamingNewCount = state.streaming.streamingNewCount + freshLogs.size,
+                                    // Cap the badge at the visible list size: rows evicted by the
+                                // display cap aren't in the list, so counting them would make
+                                // the "+N new" badge climb past what's actually shown.
+                                streamingNewCount = minOf(
+                                    state.streaming.streamingNewCount + freshLogs.size,
+                                    capped.size,
+                                ),
                                     streamingError = null,
                                 ),
                             )

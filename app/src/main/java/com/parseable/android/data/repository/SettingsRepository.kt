@@ -106,13 +106,20 @@ class SettingsRepository @Inject constructor(
     suspend fun saveServerConfig(config: ServerConfig) {
         configMutex.withLock {
             try {
+                // Persist the password (encrypted) first and confirm it committed. If the
+                // Keystore-backed write fails we abort before touching DataStore, so we never
+                // leave a new URL/username paired with a stale password.
+                val passwordSaved = withContext(Dispatchers.IO) {
+                    encryptedPrefs.edit().putString("password", config.password).commit()
+                }
+                if (!passwordSaved) {
+                    Timber.e("Failed to persist credentials securely; aborting config save")
+                    return@withLock
+                }
                 context.dataStore.edit { prefs ->
                     prefs[serverUrlKey] = config.serverUrl
                     prefs[usernameKey] = config.username
                     prefs[useTlsKey] = config.useTls
-                }
-                withContext(Dispatchers.IO) {
-                    encryptedPrefs.edit().putString("password", config.password).apply()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save server config")

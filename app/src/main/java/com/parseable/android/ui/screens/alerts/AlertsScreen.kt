@@ -94,7 +94,10 @@ fun AlertsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(state.alerts, key = { index, alert -> "${alert.id ?: alert.name ?: "alert"}_$index" }) { _, alert ->
+                    // Key on the (unique) alert id when present so per-item expand state
+                    // survives list mutations; fall back to index only for id-less alerts,
+                    // which keeps keys unique to avoid a duplicate-key crash.
+                    itemsIndexed(state.alerts, key = { index, alert -> alert.id ?: "alert_$index" }) { _, alert ->
                         AlertCard(
                             alert = alert,
                             onDelete = if (alert.id != null) {
