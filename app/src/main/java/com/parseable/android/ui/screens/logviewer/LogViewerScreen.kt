@@ -382,6 +382,7 @@ fun LogViewerScreen(
                             val key = state.logKeys.getOrElse(index) { "log_$index" }
                             LogEntryCard(
                                 logEntry = logEntry,
+                                stableKey = key,
                                 isExpanded = expandedLogKey == key,
                                 onClick = {
                                     if (expandedLogKey == key) {
@@ -702,6 +703,7 @@ private fun StreamingToggleButton(
 @Composable
 fun LogEntryCard(
     logEntry: JsonObject,
+    stableKey: String,
     isExpanded: Boolean,
     onClick: () -> Unit,
     onCopied: () -> Unit = {},
@@ -720,7 +722,9 @@ fun LogEntryCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Timestamp row
-            val rawTimestamp = remember(logEntry) {
+            // Key the derived values on the content-stable log key (not the JsonObject
+            // instance), so live-tail re-emissions of unchanged rows don't re-parse them.
+            val rawTimestamp = remember(stableKey) {
                 try {
                     logEntry["p_timestamp"]?.jsonPrimitive?.content
                         ?: logEntry["datetime"]?.jsonPrimitive?.content
@@ -745,7 +749,7 @@ fun LogEntryCard(
 
             if (!isExpanded) {
                 // Compact view: show first meaningful fields
-                val preview = remember(logEntry) {
+                val preview = remember(stableKey) {
                     logEntry.entries
                         .filter { !it.key.startsWith("p_") || it.key == "p_timestamp" }
                         .take(3)

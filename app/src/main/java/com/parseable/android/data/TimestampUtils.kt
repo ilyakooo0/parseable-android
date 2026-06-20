@@ -1,6 +1,7 @@
 package com.parseable.android.data
 
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -11,19 +12,22 @@ import java.util.Locale
 private val displayFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS", Locale.US)
 
 fun formatTimestamp(raw: String): String {
-    return try {
+    // Fast path: an ISO-8601 instant in UTC (e.g. "2026-06-20T12:00:00Z").
+    try {
         val instant = Instant.parse(raw)
-        val local = ZonedDateTime.ofInstant(instant, ZoneId.systemDefault())
-        local.format(displayFormatter)
+        return ZonedDateTime.ofInstant(instant, ZoneId.systemDefault()).format(displayFormatter)
     } catch (_: Exception) {
-        // Try alternate format with +00:00 suffix
-        try {
-            val normalized = raw.replace("+00:00", "Z")
-            val instant = Instant.parse(normalized)
-            val local = ZonedDateTime.ofInstant(instant, ZoneId.systemDefault())
-            local.format(displayFormatter)
-        } catch (_: Exception) {
-            raw
-        }
+        // Fall through to the offset-aware parser.
     }
+
+    // General path: any ISO-8601 timestamp carrying an explicit offset, including
+    // "+00:00" and non-UTC offsets like "+05:30" that Instant.parse rejects.
+    try {
+        val offset = OffsetDateTime.parse(raw)
+        return offset.atZoneSameInstant(ZoneId.systemDefault()).format(displayFormatter)
+    } catch (_: Exception) {
+        // Unparseable — show the server value verbatim rather than nothing.
+    }
+
+    return raw
 }

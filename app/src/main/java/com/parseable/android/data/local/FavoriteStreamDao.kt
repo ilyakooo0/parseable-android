@@ -15,7 +15,9 @@ interface FavoriteStreamDao {
     @Query("SELECT streamName FROM favorite_streams ORDER BY addedAt DESC")
     fun getAllNames(): Flow<List<String>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // IGNORE (not REPLACE): re-favoriting an existing stream must keep its original
+    // addedAt so the getAll() "ORDER BY addedAt DESC" ordering stays stable.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(favorite: FavoriteStream)
 
     @Delete

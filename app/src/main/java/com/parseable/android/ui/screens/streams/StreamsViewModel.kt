@@ -168,7 +168,10 @@ class StreamsViewModel @Inject constructor(
                         ?: formatBytes(stats.storage?.lifetimeSize),
                 )
                 _state.update {
-                    it.copy(
+                    // Drop late results for streams a concurrent refresh has already pruned,
+                    // so an in-flight retry can't resurrect stats for a deleted stream.
+                    if (it.streams.none { s -> s.name == streamName }) it
+                    else it.copy(
                         streamStats = it.streamStats + (streamName to ui),
                         failedStats = it.failedStats - streamName,
                     )
@@ -176,7 +179,8 @@ class StreamsViewModel @Inject constructor(
             }
             is ApiResult.Error -> {
                 _state.update {
-                    it.copy(failedStats = it.failedStats + streamName)
+                    if (it.streams.none { s -> s.name == streamName }) it
+                    else it.copy(failedStats = it.failedStats + streamName)
                 }
             }
         }

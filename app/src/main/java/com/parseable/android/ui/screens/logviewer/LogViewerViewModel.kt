@@ -179,8 +179,11 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun onSearchQueryChange(query: String) {
+        // A new query invalidates the live-tail baseline and the paged-up limit, matching
+        // the time-range / custom-SQL handlers.
+        stopStreaming()
         // Searching returns to the filter-builder query path, so drop any active custom SQL.
-        _state.update { it.copy(filters = it.filters.copy(searchQuery = query, customSql = "", isSearching = query.isNotBlank())) }
+        _state.update { it.copy(currentLimit = 500, filters = it.filters.copy(searchQuery = query, customSql = "", isSearching = query.isNotBlank())) }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300)
@@ -207,8 +210,11 @@ class LogViewerViewModel @Inject constructor(
             "IS NULL", "IS NOT NULL" -> "$column $operator"
             else -> "$column $operator $value"
         }
+        // A new filter invalidates the live-tail baseline and the paged-up limit.
+        stopStreaming()
         _state.update {
             it.copy(
+                currentLimit = 500,
                 filters = it.filters.copy(
                     filterClauses = it.filters.filterClauses + clause,
                     activeFilters = it.filters.activeFilters + display,
@@ -225,6 +231,7 @@ class LogViewerViewModel @Inject constructor(
             if (index >= 0 && index < it.filters.filterClauses.size) {
                 removed = true
                 it.copy(
+                    currentLimit = 500,
                     filters = it.filters.copy(
                         activeFilters = it.filters.activeFilters.filterIndexed { i, _ -> i != index },
                         filterClauses = it.filters.filterClauses.filterIndexed { i, _ -> i != index },
@@ -235,12 +242,17 @@ class LogViewerViewModel @Inject constructor(
                 it
             }
         }
-        if (removed) refresh()
+        if (removed) {
+            // A changed filter set invalidates the live-tail baseline.
+            stopStreaming()
+            refresh()
+        }
     }
 
     fun clearFilters() {
+        stopStreaming()
         _state.update {
-            it.copy(filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), customSql = ""))
+            it.copy(currentLimit = 500, filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), customSql = ""))
         }
         refresh()
     }
