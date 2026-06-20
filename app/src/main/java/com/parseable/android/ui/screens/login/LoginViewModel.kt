@@ -55,8 +55,17 @@ class LoginViewModel @Inject constructor(
     }
 
     fun loginWithSavedCredentials() {
+        // Guard against a second tap (or a concurrent onLogin()) launching a duplicate
+        // login. Set isLoading synchronously so the guard is effective before the
+        // coroutine starts.
+        if (_state.value.isLoading) return
+        _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            val config = settingsRepository.getSavedPassword() ?: return@launch
+            val config = settingsRepository.getSavedPassword()
+            if (config == null) {
+                _state.update { it.copy(isLoading = false) }
+                return@launch
+            }
             // Restore the saved URL/username so the saved password is paired with the
             // server/user it was saved for, even if the user edited those fields.
             _state.update {
@@ -69,7 +78,7 @@ class LoginViewModel @Inject constructor(
                     passwordError = null,
                 )
             }
-            performLogin(config.password)
+            performLogin(config.serverUrl, config.username, config.password, !config.useTls)
         }
     }
 
@@ -122,19 +131,29 @@ class LoginViewModel @Inject constructor(
             return
         }
 
+        // Guard against a duplicate in-flight login and set isLoading synchronously so a
+        // fast second tap can't launch a concurrent performLogin that races on _state.
+        if (current.isLoading) return
+        _state.update { it.copy(isLoading = true, error = null) }
+        // Pass every field from the same snapshot so the validated password can't be
+        // paired with a URL/username the user edited after tapping.
         viewModelScope.launch {
-            performLogin(current.password)
+            performLogin(current.serverUrl, current.username, current.password, current.allowInsecure)
         }
     }
 
-    private suspend fun performLogin(password: String) {
-        val current = _state.value
+    private suspend fun performLogin(
+        serverUrl: String,
+        username: String,
+        password: String,
+        allowInsecure: Boolean,
+    ) {
         _state.update { it.copy(isLoading = true, error = null) }
 
-        var url = current.serverUrl.trim()
+        var url = serverUrl.trim()
         val urlLower = url.lowercase()
         if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
-            url = if (current.allowInsecure) "http://$url" else "https://$url"
+            url = if (allowInsecure) "http://$url" else "https://$url"
         }
 
         val isValidUrl = try {
@@ -155,7 +174,7 @@ class LoginViewModel @Inject constructor(
 
         val config = ServerConfig(
             serverUrl = url,
-            username = current.username.trim(),
+            username = username.trim(),
             password = password,
             useTls = url.lowercase().startsWith("https"),
         )

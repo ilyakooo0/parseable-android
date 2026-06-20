@@ -132,9 +132,14 @@ class StreamsViewModel @Inject constructor(
 
     private val statsSemaphore = Semaphore(8)
     private var statsJob: Job? = null
+    // Per-stream retry jobs, tracked so a new bulk refresh can cancel any in-flight
+    // retry — otherwise a late retry result could overwrite freshly-loaded stats.
+    private val retryJobs = mutableMapOf<String, Job>()
 
     private fun loadStreamStats(streams: List<LogStream>) {
         statsJob?.cancel()
+        retryJobs.values.forEach { it.cancel() }
+        retryJobs.clear()
         statsJob = viewModelScope.launch {
             streams.forEach { stream ->
                 launch {
@@ -147,12 +152,14 @@ class StreamsViewModel @Inject constructor(
     }
 
     fun retryStats(streamName: String) {
-        viewModelScope.launch {
+        retryJobs[streamName]?.cancel()
+        val job = viewModelScope.launch {
             _state.update { it.copy(failedStats = it.failedStats - streamName) }
             statsSemaphore.withPermit {
                 loadSingleStreamStats(streamName)
             }
         }
+        retryJobs[streamName] = job
     }
 
     private suspend fun loadSingleStreamStats(streamName: String) {

@@ -1,8 +1,10 @@
 package com.parseable.android.data
 
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -25,6 +27,19 @@ fun formatTimestamp(raw: String): String {
     try {
         val offset = OffsetDateTime.parse(raw)
         return offset.atZoneSameInstant(ZoneId.systemDefault()).format(displayFormatter)
+    } catch (_: Exception) {
+        // Fall through to the naive (offset-less) parser.
+    }
+
+    // Final path: an offset-less ISO-8601 timestamp (e.g. "2026-06-20T12:00:00.000").
+    // Parseable stores p_timestamp in UTC, so interpret a naive timestamp as UTC and
+    // convert to the device's zone — otherwise these would render in UTC while
+    // offset-carrying values render in local time, an inconsistent mix.
+    try {
+        val local = LocalDateTime.parse(raw)
+        return local.atOffset(ZoneOffset.UTC)
+            .atZoneSameInstant(ZoneId.systemDefault())
+            .format(displayFormatter)
     } catch (_: Exception) {
         // Unparseable — show the server value verbatim rather than nothing.
     }

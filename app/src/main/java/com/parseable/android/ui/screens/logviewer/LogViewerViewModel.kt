@@ -3,6 +3,7 @@ package com.parseable.android.ui.screens.logviewer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parseable.android.data.escapeIdentifier
+import com.parseable.android.data.escapeLikePattern
 import com.parseable.android.data.escapeSql
 import com.parseable.android.data.model.*
 import com.parseable.android.data.repository.ParseableRepository
@@ -200,11 +201,12 @@ class LogViewerViewModel @Inject constructor(
     private fun addFilterInternal(column: String, operator: String, value: String) {
         if (operator !in ALLOWED_OPERATORS) return
         val safeColumn = escapeIdentifier(column)
-        val safeValue = escapeSql(value)
         val clause = when (operator) {
             "IS NULL", "IS NOT NULL" -> "\"$safeColumn\" $operator"
-            "LIKE", "ILIKE" -> "\"$safeColumn\" $operator '%$safeValue%'"
-            else -> "\"$safeColumn\" $operator '$safeValue'"
+            // %/_ in the user's value must match literally, so escape the LIKE wildcards
+            // and declare the escape character. Exact comparisons keep %/_ verbatim.
+            "LIKE", "ILIKE" -> "\"$safeColumn\" $operator '%${escapeLikePattern(value)}%' ESCAPE '\\'"
+            else -> "\"$safeColumn\" $operator '${escapeSql(value)}'"
         }
         val display = when (operator) {
             "IS NULL", "IS NOT NULL" -> "$column $operator"
@@ -282,9 +284,9 @@ class LogViewerViewModel @Inject constructor(
     private fun buildSearchClause(searchableColumns: List<String>, searchQuery: String): String? {
         if (searchQuery.isBlank()) return null
         if (searchableColumns.isEmpty()) return null
-        val safeSearch = escapeSql(searchQuery)
+        val safeSearch = escapeLikePattern(searchQuery)
         return searchableColumns.joinToString(" OR ") {
-            "CAST(\"${escapeIdentifier(it)}\" AS VARCHAR) ILIKE '%$safeSearch%'"
+            "CAST(\"${escapeIdentifier(it)}\" AS VARCHAR) ILIKE '%$safeSearch%' ESCAPE '\\'"
         }
     }
 
