@@ -16,7 +16,11 @@ fun formatBytes(raw: String?): String? {
     // would format as "NaN B" / "Infinity PB". Pass them through unchanged instead.
     if (!bytes.isFinite()) return raw
     if (bytes < 0) return raw
-    if (bytes < 1024) return String.format(Locale.US, "%.0f B", bytes)
+    // Use 1023.5, not 1024, as the cutoff: "%.0f" rounds half-up, so a byte count in
+    // [1023.5, 1024) would render as "1024 B" — a value that should promote to "1.00 KB".
+    // Such inputs fall through to the unit-scaling path, where the promotion guard below
+    // (value >= 1023.5) handles them.
+    if (bytes < 1023.5) return String.format(Locale.US, "%.0f B", bytes)
     var value = bytes
     var unitIndex = 0
     while (value >= 1024 && unitIndex < BYTE_UNITS.size - 1) {
