@@ -38,10 +38,21 @@ enum class TimeRange(val label: String, val minutes: Long) {
     CUSTOM("Custom", 0),
 }
 
+/** The original (column, operator, value) a filter chip was built from. */
+data class FilterCondition(
+    val column: String,
+    val operator: String,
+    val value: String,
+)
+
 data class FilterState(
     val searchQuery: String = "",
     val activeFilters: List<String> = emptyList(),
     val filterClauses: List<String> = emptyList(),
+    // Structured form of each chip, index-aligned with activeFilters/filterClauses.
+    // Kept so saved filters reconstruct from real values instead of re-parsing the
+    // human-readable display string (which is ambiguous when a value contains an operator).
+    val filterConditions: List<FilterCondition> = emptyList(),
     val customSql: String = "",
     val isSearching: Boolean = false,
 )
@@ -214,6 +225,17 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Run the current search immediately (e.g. the IME "Search" action). Cancels the pending
+     * debounce so it can't fire a second, redundant refresh ~300ms later.
+     */
+    fun submitSearch() {
+        searchJob?.cancel()
+        _state.update { it.copy(filters = it.filters.copy(isSearching = false)) }
+        stopStreaming()
+        refresh()
+    }
+
     fun addFilter(column: String, operator: String, value: String) {
         addFilterInternal(column, operator, value)
         refresh()
@@ -229,6 +251,12 @@ class LogViewerViewModel @Inject constructor(
             "LIKE", "ILIKE" -> "\"$safeColumn\" $operator '%${escapeLikePattern(value)}%' ESCAPE '\\'"
             else -> "\"$safeColumn\" $operator '${escapeSql(value)}'"
         }
+        // IS NULL / IS NOT NULL ignore the value in both the clause and the display, so store
+        // an empty value in the structured condition too (keeps saved filters clean).
+        val conditionValue = when (operator) {
+            "IS NULL", "IS NOT NULL" -> ""
+            else -> value
+        }
         val display = when (operator) {
             "IS NULL", "IS NOT NULL" -> "$column $operator"
             else -> "$column $operator $value"
@@ -241,6 +269,7 @@ class LogViewerViewModel @Inject constructor(
                 filters = it.filters.copy(
                     filterClauses = it.filters.filterClauses + clause,
                     activeFilters = it.filters.activeFilters + display,
+                    filterConditions = it.filters.filterConditions + FilterCondition(column, operator, conditionValue),
                     customSql = "",
                 ),
             )
@@ -258,6 +287,7 @@ class LogViewerViewModel @Inject constructor(
                     filters = it.filters.copy(
                         activeFilters = it.filters.activeFilters.filterIndexed { i, _ -> i != index },
                         filterClauses = it.filters.filterClauses.filterIndexed { i, _ -> i != index },
+                        filterConditions = it.filters.filterConditions.filterIndexed { i, _ -> i != index },
                         customSql = "",
                     ),
                 )
@@ -275,7 +305,7 @@ class LogViewerViewModel @Inject constructor(
     fun clearFilters() {
         stopStreaming()
         _state.update {
-            it.copy(currentLimit = 500, filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), customSql = ""))
+            it.copy(currentLimit = 500, filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), filterConditions = emptyList(), customSql = ""))
         }
         refresh()
     }
@@ -709,15 +739,13 @@ class LogViewerViewModel @Inject constructor(
                     filterQuery = current.filters.customSql,
                 )
             } else {
-                val ruleGroups = current.filters.activeFilters.zip(current.filters.filterClauses)
-                    .mapIndexed { index, (display, _) ->
-                        // Parse display back to field/operator/value
-                        val parts = parseFilterDisplay(display)
+                val ruleGroups = current.filters.filterConditions
+                    .mapIndexed { index, condition ->
                         FilterRule(
                             id = "rule_$index",
-                            field = parts.first,
-                            value = parts.third,
-                            operator = parts.second,
+                            field = condition.column,
+                            value = condition.value,
+                            operator = condition.operator,
                         )
                     }
                 val builder = if (ruleGroups.isNotEmpty()) {
@@ -832,19 +860,6 @@ class LogViewerViewModel @Inject constructor(
                 is ApiResult.Error -> { /* Silently ignore — will show on next reload */ }
             }
         }
-    }
-
-    /** Parse a display string like "column = value" back into (field, operator, value) */
-    private fun parseFilterDisplay(display: String): Triple<String, String, String> {
-        for (op in listOf("IS NOT NULL", "IS NULL", "ILIKE", "LIKE", "!=", ">=", "<=", "=", ">", "<")) {
-            val idx = display.indexOf(" $op")
-            if (idx >= 0) {
-                val field = display.substring(0, idx)
-                val value = display.substring(idx + op.length + 1).trim()
-                return Triple(field, op, value)
-            }
-        }
-        return Triple(display, "=", "")
     }
 
     override fun onCleared() {

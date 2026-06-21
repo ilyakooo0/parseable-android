@@ -254,11 +254,21 @@ class SettingsRepository @Inject constructor(
             }
             savedServerDao.deleteById(serverId)
 
-            // Clear active server reference if it pointed at the deleted server
+            // Clear active server reference if it pointed at the deleted server. The active
+            // connection keys (url/username/tls) and the active encrypted password live
+            // separately from the per-server row, so they must be torn down too — otherwise
+            // serverConfig still emits a valid config and the app stays logged in to the
+            // server we just deleted (and restores that session on next launch).
             val currentActiveId = context.dataStore.data.first()[activeServerIdKey]
             if (currentActiveId == serverId) {
                 context.dataStore.edit { prefs ->
                     prefs.remove(activeServerIdKey)
+                    prefs.remove(serverUrlKey)
+                    prefs.remove(usernameKey)
+                    prefs.remove(useTlsKey)
+                }
+                withContext(Dispatchers.IO) {
+                    encryptedPrefs.edit().remove("password").commit()
                 }
             }
         }

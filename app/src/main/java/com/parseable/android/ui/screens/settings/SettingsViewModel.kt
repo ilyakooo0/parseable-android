@@ -11,11 +11,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonPrimitive
@@ -43,9 +45,14 @@ class SettingsViewModel @Inject constructor(
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
-    /** Emits the server ID after a successful switch so the screen can navigate. */
-    private val _switchEvent = MutableStateFlow<Long?>(null)
-    val switchEvent: StateFlow<Long?> = _switchEvent.asStateFlow()
+    /**
+     * Emits the server ID after a successful switch so the screen can navigate. A [Channel]
+     * (matching the codebase's other one-shot events) so the navigation fires exactly once and
+     * is not re-delivered on rotation — a StateFlow retains its last value and would re-navigate
+     * when the screen re-collects after a config change.
+     */
+    private val _switchEvent = Channel<Long>(Channel.BUFFERED)
+    val switchEvent = _switchEvent.receiveAsFlow()
 
     private var loadJob: Job? = null
 
@@ -126,14 +133,10 @@ class SettingsViewModel @Inject constructor(
             val config = settingsRepository.switchToServer(serverId)
             if (config != null) {
                 repository.configure(config)
-                _switchEvent.value = serverId
+                _switchEvent.send(serverId)
             }
             _state.update { it.copy(isSwitching = false) }
         }
-    }
-
-    fun consumeSwitchEvent() {
-        _switchEvent.value = null
     }
 
     fun deleteServer(serverId: Long) {

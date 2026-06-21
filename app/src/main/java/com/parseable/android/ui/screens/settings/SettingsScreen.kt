@@ -30,11 +30,9 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val switchEvent by viewModel.switchEvent.collectAsStateWithLifecycle()
 
-    LaunchedEffect(switchEvent) {
-        if (switchEvent != null) {
-            viewModel.consumeSwitchEvent()
+    LaunchedEffect(Unit) {
+        viewModel.switchEvent.collect {
             onServerSwitched()
         }
     }

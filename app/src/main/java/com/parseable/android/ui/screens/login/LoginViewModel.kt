@@ -110,6 +110,15 @@ class LoginViewModel @Inject constructor(
     fun onLogin() {
         val current = _state.value
 
+        // With saved credentials the password field is intentionally left empty (the user is
+        // expected to tap "Use saved credentials"). Tapping the primary Connect button in that
+        // state should do the obvious thing — log in with the saved password — rather than
+        // reject with "Password is required".
+        if (current.password.isBlank() && current.hasSavedCredentials) {
+            loginWithSavedCredentials()
+            return
+        }
+
         // Validate
         var hasError = false
         var urlError: String? = null
