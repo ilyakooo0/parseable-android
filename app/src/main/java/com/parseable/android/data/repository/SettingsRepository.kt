@@ -286,4 +286,29 @@ class SettingsRepository @Inject constructor(
             wasActive
         }
     }
+
+    /**
+     * Remove EncryptedSharedPreferences password entries that no longer correspond to a
+     * saved_servers row. Row-collapsing schema migrations (e.g. MIGRATION_2_3, which deletes
+     * duplicate rows) run as raw SQL and can't reach EncryptedSharedPreferences, so the
+     * removed rows' "server_pwd_*" keys would otherwise linger encrypted on disk forever.
+     * Best-effort, safe to run at startup. Only touches per-server keys ("server_pwd_*") so
+     * the active-connection "password" key is never disturbed.
+     */
+    suspend fun cleanupOrphanedServerPasswords() {
+        configMutex.withLock {
+            val referenced = savedServerDao.getAll().first().map { it.passwordKey }.toSet()
+            withContext(Dispatchers.IO) {
+                val orphans = encryptedPrefs.all.keys.filter {
+                    it.startsWith("server_pwd_") && it !in referenced
+                }
+                if (orphans.isNotEmpty()) {
+                    encryptedPrefs.edit().apply {
+                        orphans.forEach { remove(it) }
+                    }.commit()
+                    Timber.i("Removed ${orphans.size} orphaned server password entries")
+                }
+            }
+        }
+    }
 }

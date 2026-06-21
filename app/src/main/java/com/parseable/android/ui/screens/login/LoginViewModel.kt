@@ -168,7 +168,12 @@ class LoginViewModel @Inject constructor(
     ) {
         _state.update { it.copy(isLoading = true, error = null) }
 
-        var url = serverUrl.trim()
+        // Strip trailing slashes so the persisted URL matches the canonical form the API
+        // client uses (ParseableApiClient.configure also does trimEnd('/')). Without this,
+        // "http://host:8000" and "http://host:8000/" persist as distinct strings, defeating
+        // saveServer's (serverUrl, username) dedup and the UNIQUE index — the same server
+        // ends up as two saved-server rows.
+        var url = serverUrl.trim().trimEnd('/')
         val urlLower = url.lowercase()
         if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
             url = if (allowInsecure) "http://$url" else "https://$url"

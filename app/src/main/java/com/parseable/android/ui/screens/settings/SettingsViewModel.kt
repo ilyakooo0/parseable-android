@@ -133,20 +133,31 @@ class SettingsViewModel @Inject constructor(
         if (_state.value.isSwitching) return
         viewModelScope.launch {
             _state.update { it.copy(isSwitching = true, error = null) }
-            val config = settingsRepository.switchToServer(serverId)
-            if (config != null) {
-                repository.configure(config)
-                _switchEvent.send(serverId)
-                _state.update { it.copy(isSwitching = false) }
-            } else {
-                // Surface the failure instead of silently dropping the spinner — a null
-                // result means the saved credentials couldn't be loaded for this server.
-                _state.update {
-                    it.copy(
-                        isSwitching = false,
-                        error = "Couldn't switch servers — the saved credentials for this server are missing or couldn't be read.",
-                    )
+            try {
+                val config = settingsRepository.switchToServer(serverId)
+                if (config != null) {
+                    repository.configure(config)
+                    _switchEvent.send(serverId)
+                } else {
+                    // Surface the failure instead of silently dropping the spinner — a null
+                    // result means the saved credentials couldn't be loaded for this server.
+                    _state.update {
+                        it.copy(
+                            error = "Couldn't switch servers — the saved credentials for this server are missing or couldn't be read.",
+                        )
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(error = e.message ?: "Couldn't switch servers.")
+                }
+            } finally {
+                // Always clear the flag. Without finally, an exception or cancellation would
+                // leave isSwitching = true, and the early-return guard above would then make
+                // server-switching permanently impossible for this ViewModel instance.
+                _state.update { it.copy(isSwitching = false) }
             }
         }
     }

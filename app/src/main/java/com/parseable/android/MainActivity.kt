@@ -51,6 +51,15 @@ class MainActivity : ComponentActivity() {
                             repository.configure(savedConfig)
                         }
                         startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
+
+                        // Best-effort: drop password entries orphaned by row-collapsing
+                        // migrations (raw-SQL migrations can't reach EncryptedSharedPreferences).
+                        // Runs after startDestination so it never blocks first paint.
+                        try {
+                            settingsRepository.cleanupOrphanedServerPasswords()
+                        } catch (_: Exception) {
+                            // Cleanup is non-critical; ignore failures.
+                        }
                     }
 
                     val dest = startDestination

@@ -147,7 +147,7 @@ class ParseableApiClient @Inject constructor() {
             }
         }
 
-    private fun <T> parseResponse(body: String, description: String, parse: () -> T): ApiResult<T> {
+    private fun <T> parseResponse(description: String, parse: () -> T): ApiResult<T> {
         return try {
             ApiResult.Success(parse())
         } catch (e: SerializationException) {
@@ -171,7 +171,7 @@ class ParseableApiClient @Inject constructor() {
     suspend fun getAbout(): ApiResult<AboutInfo> {
         val request = buildRequest("/api/v1/about").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "about info") {
+            is ApiResult.Success -> parseResponse("about info") {
                 json.decodeFromString<AboutInfo>(result.data)
             }
             is ApiResult.Error -> result
@@ -227,7 +227,7 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/schema").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "schema") {
+            is ApiResult.Success -> parseResponse("schema") {
                 json.decodeFromString<StreamSchema>(result.data)
             }
             is ApiResult.Error -> result
@@ -241,7 +241,7 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/stats").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "stats") {
+            is ApiResult.Success -> parseResponse("stats") {
                 json.decodeFromString<StreamStats>(result.data)
             }
             is ApiResult.Error -> result
@@ -255,7 +255,7 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(stream)
         val request = buildRequest("/api/v1/logstream/$encoded/info").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "stream info") {
+            is ApiResult.Success -> parseResponse("stream info") {
                 val element = json.parseToJsonElement(result.data)
                 (element as? JsonObject)
                     ?: throw IllegalArgumentException("Expected JSON object, got ${element::class.simpleName}")
@@ -275,7 +275,7 @@ class ParseableApiClient @Inject constructor() {
                 try {
                     ApiResult.Success(json.decodeFromString<List<RetentionConfig>>(result.data))
                 } catch (_: Exception) {
-                    parseResponse(result.data, "retention config") {
+                    parseResponse("retention config") {
                         val single = json.decodeFromString<RetentionConfig>(result.data)
                         // An empty object ({}) decodes into an all-null config — that means
                         // "no retention configured" (zero rules), not one empty rule.
@@ -313,7 +313,7 @@ class ParseableApiClient @Inject constructor() {
             .build()
 
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "query results") {
+            is ApiResult.Success -> parseResponse("query results") {
                 val element = json.parseToJsonElement(result.data)
                 val elements = (element as? JsonArray)
                     ?: throw IllegalArgumentException("Expected JSON array, got ${element::class.simpleName}")
@@ -338,7 +338,7 @@ class ParseableApiClient @Inject constructor() {
     suspend fun listAlerts(): ApiResult<List<Alert>> {
         val request = buildRequest("/api/v1/alerts").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "alerts") {
+            is ApiResult.Success -> parseResponse("alerts") {
                 val element = json.parseToJsonElement(result.data)
                 val alertsArray = when (element) {
                     is JsonArray -> element
@@ -377,7 +377,7 @@ class ParseableApiClient @Inject constructor() {
             .post(requestBody)
             .build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "alert") {
+            is ApiResult.Success -> parseResponse("alert") {
                 json.decodeFromString<Alert>(result.data)
             }
             is ApiResult.Error -> result
@@ -390,7 +390,7 @@ class ParseableApiClient @Inject constructor() {
     suspend fun listUsers(): ApiResult<List<JsonObject>> {
         val request = buildRequest("/api/v1/user").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "users") {
+            is ApiResult.Success -> parseResponse("users") {
                 val element = json.parseToJsonElement(result.data)
                 val elements = (element as? JsonArray)
                     ?: throw IllegalArgumentException("Expected JSON array, got ${element::class.simpleName}")
@@ -406,7 +406,7 @@ class ParseableApiClient @Inject constructor() {
     suspend fun listFilters(): ApiResult<List<SavedFilter>> {
         val request = buildRequest("/api/v1/filters").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "filters") {
+            is ApiResult.Success -> parseResponse("filters") {
                 json.decodeFromString<List<SavedFilter>>(result.data)
             }
             is ApiResult.Error -> result
@@ -420,7 +420,7 @@ class ParseableApiClient @Inject constructor() {
         val encoded = encodePathSegment(filterId)
         val request = buildRequest("/api/v1/filters/$encoded").get().build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "filter") {
+            is ApiResult.Success -> parseResponse("filter") {
                 json.decodeFromString<SavedFilter>(result.data)
             }
             is ApiResult.Error -> result
@@ -437,7 +437,7 @@ class ParseableApiClient @Inject constructor() {
             .post(requestBody)
             .build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "filter") {
+            is ApiResult.Success -> parseResponse("filter") {
                 json.decodeFromString<SavedFilter>(result.data)
             }
             is ApiResult.Error -> result
@@ -455,7 +455,7 @@ class ParseableApiClient @Inject constructor() {
             .put(requestBody)
             .build()
         return when (val result = executeRequest(request)) {
-            is ApiResult.Success -> parseResponse(result.data, "filter") {
+            is ApiResult.Success -> parseResponse("filter") {
                 json.decodeFromString<SavedFilter>(result.data)
             }
             is ApiResult.Error -> result

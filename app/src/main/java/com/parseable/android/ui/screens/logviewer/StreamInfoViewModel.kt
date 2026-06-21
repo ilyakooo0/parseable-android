@@ -48,6 +48,10 @@ class StreamInfoViewModel @Inject constructor(
     )
 
     fun load(streamName: String) {
+        // Already showing (or loading) this stream — don't cancel and refetch all four
+        // endpoints on recomposition / config change. Matches LogViewerViewModel.initialize's
+        // guard; the screen loads once per stream (see StreamInfoScreen's LaunchedEffect).
+        if (_state.value.streamName == streamName) return
         loadJob?.cancel()
         _state.update { it.copy(streamName = streamName, isLoading = true, error = null) }
 
