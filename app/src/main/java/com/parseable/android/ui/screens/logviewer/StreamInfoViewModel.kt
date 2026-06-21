@@ -52,6 +52,21 @@ class StreamInfoViewModel @Inject constructor(
         // endpoints on recomposition / config change. Matches LogViewerViewModel.initialize's
         // guard; the screen loads once per stream (see StreamInfoScreen's LaunchedEffect).
         if (_state.value.streamName == streamName) return
+        fetch(streamName)
+    }
+
+    /**
+     * Re-fetch the currently-shown stream, bypassing load()'s identity guard. Wired to
+     * pull-to-refresh so the user can retry after a transient endpoint failure (e.g. a failed
+     * schema fetch or a delete that errored) without leaving and re-entering the screen.
+     */
+    fun refresh() {
+        val name = _state.value.streamName
+        if (name.isEmpty()) return
+        fetch(name)
+    }
+
+    private fun fetch(streamName: String) {
         loadJob?.cancel()
         _state.update { it.copy(streamName = streamName, isLoading = true, error = null) }
 
