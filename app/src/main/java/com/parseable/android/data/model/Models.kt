@@ -152,7 +152,10 @@ data class Alert(
     val datasets: List<String> = emptyList(),
 ) {
     /** Best-effort display name from either response format. */
-    val displayName: String get() = title ?: name ?: "Unnamed Alert"
+    val displayName: String
+        get() = title?.takeIf { it.isNotBlank() }
+            ?: name?.takeIf { it.isNotBlank() }
+            ?: "Unnamed Alert"
 
     /** Whether the alert is active, derived from either response format. */
     val isEnabled: Boolean get() = when {

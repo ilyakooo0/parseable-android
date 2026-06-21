@@ -15,9 +15,21 @@ private val displayFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm:ss.SSS"
 
 fun formatTimestamp(raw: String): String {
     // Parseable/DataFusion sometimes renders p_timestamp with a space between the date and
-    // time ("2026-06-20 12:00:00.000") instead of the ISO 'T'. Normalize that first space to
-    // 'T' so the parsers below accept it; values already in ISO form are left untouched.
-    val iso = if (' ' in raw && 'T' !in raw) raw.replaceFirst(' ', 'T') else raw
+    // time ("2026-06-20 12:00:00.000") instead of the ISO 'T', and may append a zone/offset
+    // after another space ("... +00:00", "... UTC"). Normalize both so the parsers below
+    // accept them; values already in canonical ISO form are left untouched.
+    var iso = raw.trim()
+    // Convert the FIRST space (date↔time separator) to 'T', unless a 'T' already precedes it
+    // (in which case that space sits before a zone token, handled next).
+    val firstSpace = iso.indexOf(' ')
+    if (firstSpace != -1 && 'T' !in iso.substring(0, firstSpace + 1)) {
+        iso = iso.substring(0, firstSpace) + "T" + iso.substring(firstSpace + 1)
+    }
+    // Drop a space sitting between the time and a trailing offset/zone token:
+    // "...12:00:00 +00:00" → "...12:00:00+00:00", "...12:00:00 UTC" → "...12:00:00UTC".
+    iso = iso.replace(Regex("(?<=\\d)\\s+(?=[+\\-Z]|UTC)"), "")
+    // Map a textual "UTC" suffix to the ISO 'Z' the parsers understand.
+    if (iso.endsWith("UTC")) iso = iso.removeSuffix("UTC") + "Z"
 
     // Fast path: an ISO-8601 instant in UTC (e.g. "2026-06-20T12:00:00Z").
     try {

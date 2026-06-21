@@ -18,6 +18,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -443,6 +446,10 @@ class LogViewerViewModel @Inject constructor(
     }
 
     private fun startStreaming() {
+        // The poller builds its own default SELECT * query and cannot honor a custom SQL
+        // projection/filter, so streaming custom-query results would prepend mismatched rows.
+        // The UI disables the toggle in this state; guard here too in case it's reached anyway.
+        if (_state.value.filters.customSql.isNotBlank()) return
         stopStreaming()
         consecutiveStreamingErrors = 0
         val generation = ++streamingGeneration
@@ -498,6 +505,30 @@ class LogViewerViewModel @Inject constructor(
      * distinct logs that happen to share a timestamp/metadata/tags are not dropped.
      */
     private fun logIdentity(log: JsonObject): String = log.toString()
+
+    /**
+     * Parse a server-rendered p_timestamp (which may be ISO with 'Z', offset-carrying,
+     * space-separated, or offset-less UTC) and reformat it to the canonical query format
+     * (`dateFormatter`) so it's a valid inclusive startTime for the next poll. Returns null
+     * if the value can't be parsed, so the caller can keep the previous boundary.
+     */
+    private fun normalizeBoundaryTimestamp(raw: String): String? {
+        val isoLike = if (' ' in raw && 'T' !in raw) raw.replaceFirst(' ', 'T') else raw
+        val instant = try {
+            Instant.parse(isoLike)
+        } catch (_: Exception) {
+            try {
+                OffsetDateTime.parse(isoLike).toInstant()
+            } catch (_: Exception) {
+                try {
+                    LocalDateTime.parse(isoLike).toInstant(ZoneOffset.UTC)
+                } catch (_: Exception) {
+                    return null
+                }
+            }
+        }
+        return instant.atOffset(ZoneOffset.UTC).format(dateFormatter)
+    }
 
     /** Bound the dedup set, evicting the oldest identities first (insertion order). */
     private fun trimSeenStreamingKeys() {
@@ -571,8 +602,14 @@ class LogViewerViewModel @Inject constructor(
                     } catch (_: Exception) {
                         null
                     }
-                    if (boundaryTimestamp != null) {
-                        lastSeenTimestamp = boundaryTimestamp
+                    // Re-canonicalize the server's p_timestamp before reusing it as the next
+                    // query's startTime. The raw value can be space-separated or offset-less,
+                    // which the query API may reject or misparse — that would stall live-tail
+                    // after the first batch. If it can't be parsed, leave lastSeenTimestamp as-is
+                    // (the inclusive startTime simply re-fetches the window; rows are deduped).
+                    val normalized = boundaryTimestamp?.let { normalizeBoundaryTimestamp(it) }
+                    if (normalized != null) {
+                        lastSeenTimestamp = normalized
                     }
 
                     // The query's startTime is inclusive, so rows sitting on the previous

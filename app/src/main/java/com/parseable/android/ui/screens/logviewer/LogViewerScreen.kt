@@ -101,6 +101,10 @@ fun LogViewerScreen(
                 actions = {
                     StreamingToggleButton(
                         isStreaming = state.isStreaming,
+                        // Live-tail re-derives its own default SELECT * query in the poller, so
+                        // it can't honor a custom SQL projection/filter. Disable the toggle while
+                        // a custom query is active to avoid prepending mismatched rows.
+                        enabled = state.customSql.isBlank(),
                         onClick = viewModel::toggleStreaming,
                     )
                     IconButton(onClick = { onStreamInfo(streamName) }) {
@@ -528,10 +532,18 @@ fun LogViewerScreen(
                                     if (!dir.mkdirs() && !dir.isDirectory) {
                                         throw java.io.IOException("Failed to create shared_logs directory")
                                     }
-                                    // Clean up previous exports
-                                    dir.listFiles()?.forEach { old -> old.delete() }
+                                    // Clean up STALE exports only. A share chooser opened moments
+                                    // ago may still be reading a recent file via its FileProvider
+                                    // URI; deleting every file (as before) could pull one out from
+                                    // under an in-flight share. Keep anything written in the last
+                                    // hour and give each export a unique name so concurrent shares
+                                    // never collide.
+                                    val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
+                                    dir.listFiles()?.forEach { old ->
+                                        if (old.lastModified() < cutoff) old.delete()
+                                    }
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                                    val file = java.io.File(dir, "logs_$safeFileName.json")
+                                    val file = java.io.File(dir, "logs_${safeFileName}_${System.currentTimeMillis()}.json")
                                     file.bufferedWriter().use { writer ->
                                         // Use compact JSON for large exports to reduce memory/file size
                                         val encoder = if (logs.size > 1000) Json else prettyJson
@@ -686,9 +698,10 @@ private fun TimeRangeBar(
 @Composable
 private fun StreamingToggleButton(
     isStreaming: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, enabled = enabled || isStreaming) {
         if (isStreaming) {
             val infiniteTransition = rememberInfiniteTransition(label = "stream_pulse")
             val alpha by infiniteTransition.animateFloat(
