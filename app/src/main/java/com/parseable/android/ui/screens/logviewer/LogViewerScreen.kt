@@ -287,9 +287,41 @@ fun LogViewerScreen(
             // Log entries
             PullToRefreshBox(
                 isRefreshing = state.isLoading,
-                onRefresh = viewModel::refresh,
+                onRefresh = viewModel::pullRefresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
+                // Hoisted above the error/loading/empty/list branches so the scroll position,
+                // the clipboard handle, and the viewing-top / load-more effects survive
+                // transitions through those states. If they lived inside the list `else` branch
+                // they would be disposed and recreated on every empty/loading/error transition,
+                // resetting scroll to the top and re-arming loadMore mid-load.
+                val listState = rememberLazyListState()
+                val clipboard = remember {
+                    context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                }
+
+                // Tell the ViewModel when the list is at the top so it can clear the live-tail
+                // "+N new" badge — new rows prepend at the top and are seen immediately there.
+                val atTop by remember {
+                    derivedStateOf {
+                        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                    }
+                }
+                LaunchedEffect(atTop) { viewModel.setViewingTop(atTop) }
+
+                // Auto-load more when scrolling near the bottom.
+                val shouldLoadMore by remember {
+                    derivedStateOf {
+                        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        lastVisible >= listState.layoutInfo.totalItemsCount - 5
+                    }
+                }
+                LaunchedEffect(shouldLoadMore, state.hasMore, state.isLoading) {
+                    if (shouldLoadMore && state.hasMore && !state.isLoading) {
+                        viewModel.loadMore()
+                    }
+                }
+
                 if (state.error != null && state.logs.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -356,35 +388,6 @@ fun LogViewerScreen(
                         }
                     }
                 } else {
-                    val listState = rememberLazyListState()
-                    val clipboard = remember {
-                        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    }
-
-                    // Tell the ViewModel when the list is at the top so it can clear the live-tail
-                    // "+N new" badge — new rows prepend at the top and are seen immediately there.
-                    val atTop by remember {
-                        derivedStateOf {
-                            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-                        }
-                    }
-                    LaunchedEffect(atTop) { viewModel.setViewingTop(atTop) }
-
-                    // Auto-load more when scrolling near the bottom. The derived state and
-                    // effect live outside any conditional so they are never disposed and
-                    // re-created mid-load (which could re-trigger loadMore in a loop).
-                    val shouldLoadMore by remember {
-                        derivedStateOf {
-                            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            lastVisible >= listState.layoutInfo.totalItemsCount - 5
-                        }
-                    }
-                    LaunchedEffect(shouldLoadMore, state.hasMore, state.isLoading) {
-                        if (shouldLoadMore && state.hasMore && !state.isLoading) {
-                            viewModel.loadMore()
-                        }
-                    }
-
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(8.dp),

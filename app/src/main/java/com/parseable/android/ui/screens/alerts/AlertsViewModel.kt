@@ -29,13 +29,18 @@ class AlertsViewModel @Inject constructor(
     private val _state = MutableStateFlow(AlertsState())
     val state: StateFlow<AlertsState> = _state.asStateFlow()
 
+    private var refreshJob: Job? = null
+
     init {
         // Load once on creation; the screen no longer refreshes on every RESUME.
         refresh()
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        // Cancel any in-flight load so out-of-order completions can't overwrite a newer alert
+        // list with a stale one (init load, pull-to-refresh and deleteAlert->refresh can overlap).
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             when (val result = repository.listAlerts()) {
                 is ApiResult.Success -> {

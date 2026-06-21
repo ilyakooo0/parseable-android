@@ -129,6 +129,9 @@ class StreamInfoViewModel @Inject constructor(
         val name = _state.value.streamName
         // Guard against a no-op or a second tap firing a duplicate DELETE while one is in flight.
         if (name.isEmpty() || _state.value.isDeleting) return
+        // Cancel any in-flight load so its terminal update can't re-populate stats/schema for the
+        // stream we're about to delete after the DELETE completes.
+        loadJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isDeleting = true, error = null) }
             when (val result = repository.deleteStream(name)) {

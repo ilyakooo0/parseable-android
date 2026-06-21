@@ -442,6 +442,18 @@ class LogViewerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Pull-to-refresh: restart the paging session from the first page. Resetting currentLimit
+     * makes refresh() re-anchor pageAnchorTime to "now", so a relative time range advances and
+     * newly-ingested rows appear. Calling refresh() alone keeps the frozen anchor once the user
+     * has paged past the first page, making pull-to-refresh look like it does nothing.
+     */
+    fun pullRefresh() {
+        if (_state.value.streamName.isEmpty()) return
+        _state.update { it.copy(currentLimit = 500) }
+        refresh()
+    }
+
     fun loadMore() {
         val current = _state.value
         // While live-tailing, logs are prepended in memory; a refresh() here would replace
