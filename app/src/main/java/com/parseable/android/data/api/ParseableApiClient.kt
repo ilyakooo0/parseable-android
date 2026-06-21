@@ -103,24 +103,40 @@ class ParseableApiClient @Inject constructor() {
     }
 
     fun shutdown() {
+        // Only evict idle connections. The dispatcher's executor is SHARED across the
+        // secure/insecure clients of this @Singleton; shutting it down is irreversible and
+        // would make every later request throw RejectedExecutionException after a
+        // clearConfig()/configure() cycle. Eviction is enough to release pooled sockets.
         sharedPool.evictAll()
-        sharedDispatcher.executorService.shutdown()
     }
 
     private fun encodePathSegment(segment: String): String =
         URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
 
     private fun buildRequest(path: String): Request.Builder {
+        // Snapshot the volatile config ONCE and derive both the URL/auth header and the
+        // TLS client (secure vs. insecure) from it. Selecting the client lazily in
+        // executeRequest would re-read `config`, so a concurrent server switch could
+        // dispatch server A's URL/auth through server B's TLS client. Pinning the client
+        // onto the request as a tag keeps the whole request internally consistent.
         val snapshot = config
-        return Request.Builder()
+        val selectedClient = if (snapshot.allowInsecure) insecureClient else secureClient
+        val builder = Request.Builder()
             .url("${snapshot.baseUrl}$path")
-            .header("Authorization", snapshot.authHeader)
+            .tag(OkHttpClient::class.java, selectedClient)
+        // Don't send a literal empty "Authorization:" header for unconfigured calls
+        // (e.g. pre-login connectivity probes) — strict servers/proxies may reject it.
+        if (snapshot.authHeader.isNotEmpty()) {
+            builder.header("Authorization", snapshot.authHeader)
+        }
+        return builder
     }
 
     private suspend fun executeRequest(request: Request): ApiResult<String> =
         withContext(Dispatchers.IO) {
             try {
-                client.newCall(request).execute().use { response ->
+                val callClient = request.tag(OkHttpClient::class.java) ?: client
+                callClient.newCall(request).execute().use { response ->
                     val body = response.body?.string() ?: ""
                     if (response.isSuccessful) {
                         ApiResult.Success(body)

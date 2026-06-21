@@ -157,7 +157,12 @@ fun StreamsScreen(
                 }
             } else {
                 Column {
-                    if (state.streams.size > 5) {
+                    // Keep the search field visible whenever a query is active, even if the
+                    // total stream count has since dropped to <=5 (e.g. after a refresh or a
+                    // server-side deletion). Otherwise the field would vanish while the stale
+                    // query keeps filtering `filteredStreams`, stranding the user with no way
+                    // to clear it.
+                    if (state.streams.size > 5 || searchQuery.isNotEmpty()) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },

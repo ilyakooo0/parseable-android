@@ -309,7 +309,7 @@ class LogViewerViewModel @Inject constructor(
     fun clearFilters() {
         stopStreaming()
         _state.update {
-            it.copy(currentLimit = 500, filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), filterConditions = emptyList(), customSql = ""))
+            it.copy(currentLimit = 500, filters = it.filters.copy(activeFilters = emptyList(), filterClauses = emptyList(), filterConditions = emptyList(), customSql = "", searchQuery = "", isSearching = false))
         }
         refresh()
     }

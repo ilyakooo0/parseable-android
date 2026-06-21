@@ -75,13 +75,15 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
                 7 -> LogSeverity.DEBUG
                 else -> LogSeverity.UNKNOWN
             }
-            // HTTP status codes
-            fieldName.equals("status", ignoreCase = true) -> when {
-                num >= 500 -> LogSeverity.ERROR
-                num >= 400 -> LogSeverity.WARNING
+            // HTTP status codes. Bound every branch to the valid HTTP range (100..599):
+            // `status` is a very generic field name, so an unbounded `>= 500`/`>= 400`
+            // would mis-color non-HTTP values (e.g. status: 50000) as ERROR/WARNING.
+            fieldName.equals("status", ignoreCase = true) -> when (num) {
+                in 500..599 -> LogSeverity.ERROR
+                in 400..499 -> LogSeverity.WARNING
                 // 1xx (informational) through 3xx are non-error HTTP statuses; 1xx previously
                 // fell through to UNKNOWN.
-                num in 100..399 -> LogSeverity.INFO
+                in 100..399 -> LogSeverity.INFO
                 else -> LogSeverity.UNKNOWN
             }
             // Generic numeric (Java util logging style: higher = more severe)

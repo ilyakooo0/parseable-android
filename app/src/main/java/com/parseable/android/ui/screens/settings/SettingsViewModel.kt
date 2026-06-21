@@ -54,6 +54,15 @@ class SettingsViewModel @Inject constructor(
     private val _switchEvent = Channel<Long>(Channel.BUFFERED)
     val switchEvent = _switchEvent.receiveAsFlow()
 
+    /**
+     * Emitted when the currently-active server is deleted. The active connection has been torn
+     * down, so there is no valid session left — the screen must navigate back to login rather
+     * than leave the user on a Settings screen pointed at a deleted server. A one-shot [Channel]
+     * for the same reason as [switchEvent].
+     */
+    private val _loggedOutEvent = Channel<Unit>(Channel.BUFFERED)
+    val loggedOutEvent = _loggedOutEvent.receiveAsFlow()
+
     private var loadJob: Job? = null
 
     init {
@@ -167,9 +176,10 @@ class SettingsViewModel @Inject constructor(
             val wasActive = settingsRepository.deleteServer(serverId)
             if (wasActive) {
                 // The active connection was torn down, so the Server Connection / Server Info
-                // cards are now showing a deleted server. Clear them instead of leaving stale
-                // details on screen until a manual refresh. (Don't reload: the in-memory api
-                // client still points at the deleted server, so a fetch would hit it.)
+                // cards are now showing a deleted server. Clear them for the transition frame,
+                // then navigate back to login — there is no valid session to keep using and the
+                // in-memory api client still points at the deleted server, so any fetch from
+                // here would hit it.
                 _state.update {
                     it.copy(
                         serverUrl = "",
@@ -178,6 +188,7 @@ class SettingsViewModel @Inject constructor(
                         users = emptyList(),
                     )
                 }
+                _loggedOutEvent.send(Unit)
             }
         }
     }

@@ -27,6 +27,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onAboutClick: () -> Unit,
     onServerSwitched: () -> Unit,
+    onLoggedOut: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -34,6 +35,12 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         viewModel.switchEvent.collect {
             onServerSwitched()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.loggedOutEvent.collect {
+            onLoggedOut()
         }
     }
 

@@ -195,6 +195,11 @@ fun ParseableNavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
+                onLoggedOut = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
             )
         }
 
