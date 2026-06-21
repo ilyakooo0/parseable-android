@@ -74,22 +74,25 @@ class SettingsRepository @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs ->
-            configMutex.withLock {
-                val url = prefs[serverUrlKey] ?: return@withLock null
-                val user = prefs[usernameKey] ?: return@withLock null
-                val pass = try {
-                    encryptedPrefs.getString("password", null)
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to read encrypted password")
-                    null
-                } ?: return@withLock null
-                ServerConfig(
-                    serverUrl = url,
-                    username = user,
-                    password = pass,
-                    useTls = prefs[useTlsKey] ?: true,
-                )
-            }
+            // No configMutex here: this read path fires on every DataStore emission, and
+            // taking the writers' mutex serialized all reads behind in-flight writes (each
+            // writer holds configMutex across its whole dataStore.edit { }). Reading the
+            // active config is independent of the write critical sections, so it doesn't
+            // need the lock.
+            val url = prefs[serverUrlKey] ?: return@map null
+            val user = prefs[usernameKey] ?: return@map null
+            val pass = try {
+                encryptedPrefs.getString("password", null)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to read encrypted password")
+                null
+            } ?: return@map null
+            ServerConfig(
+                serverUrl = url,
+                username = user,
+                password = pass,
+                useTls = prefs[useTlsKey] ?: true,
+            )
         }
         .flowOn(Dispatchers.IO)
 
@@ -166,7 +169,10 @@ class SettingsRepository @Inject constructor(
     suspend fun saveServer(config: ServerConfig): Long {
         return configMutex.withLock {
             val existing = savedServerDao.findByUrlAndUsername(config.serverUrl, config.username)
-            val passwordKey = existing?.passwordKey ?: "server_pwd_${System.currentTimeMillis()}"
+            // Use a UUID, not System.currentTimeMillis(): two distinct new servers saved
+            // within the same millisecond would otherwise share a key and the second
+            // would overwrite the first's encrypted password.
+            val passwordKey = existing?.passwordKey ?: "server_pwd_${java.util.UUID.randomUUID()}"
             val server = SavedServer(
                 id = existing?.id ?: 0,
                 serverUrl = config.serverUrl,

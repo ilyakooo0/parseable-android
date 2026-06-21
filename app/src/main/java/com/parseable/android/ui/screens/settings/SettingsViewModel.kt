@@ -128,14 +128,26 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun switchToServer(serverId: Long) {
+        // Guard against a second tap launching a concurrent switch that would send a
+        // duplicate _switchEvent and navigate twice.
+        if (_state.value.isSwitching) return
         viewModelScope.launch {
-            _state.update { it.copy(isSwitching = true) }
+            _state.update { it.copy(isSwitching = true, error = null) }
             val config = settingsRepository.switchToServer(serverId)
             if (config != null) {
                 repository.configure(config)
                 _switchEvent.send(serverId)
+                _state.update { it.copy(isSwitching = false) }
+            } else {
+                // Surface the failure instead of silently dropping the spinner — a null
+                // result means the saved credentials couldn't be loaded for this server.
+                _state.update {
+                    it.copy(
+                        isSwitching = false,
+                        error = "Couldn't switch servers — the saved credentials for this server are missing or couldn't be read.",
+                    )
+                }
             }
-            _state.update { it.copy(isSwitching = false) }
         }
     }
 

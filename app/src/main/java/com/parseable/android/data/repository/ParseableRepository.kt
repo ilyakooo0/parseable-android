@@ -71,12 +71,23 @@ class ParseableRepository @Inject constructor(
      * Does NOT trigger [checkAuth] so the global auth-error handler won't fire during login.
      */
     suspend fun verifyServer(): ApiResult<AboutInfo> {
-        return when (val result = apiClient.getAbout()) {
+        return when (val aboutResult = apiClient.getAbout()) {
             is ApiResult.Success -> {
-                aboutCache = CacheEntry(result.data)
-                result
+                // GET /about is not auth-gated on Parseable, so a success here only proves
+                // the server is reachable and is Parseable — NOT that the credentials are
+                // valid. Probe an auth-required endpoint (logstream listing, which the app
+                // needs anyway) so wrong credentials are rejected at login instead of being
+                // persisted and only failing on the first real request. Call apiClient
+                // directly to avoid checkAuth firing the global auth-error handler mid-login.
+                when (val authProbe = apiClient.listStreams()) {
+                    is ApiResult.Success -> {
+                        aboutCache = CacheEntry(aboutResult.data)
+                        aboutResult
+                    }
+                    is ApiResult.Error -> authProbe
+                }
             }
-            is ApiResult.Error -> result
+            is ApiResult.Error -> aboutResult
         }
     }
 

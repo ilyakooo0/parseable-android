@@ -801,9 +801,15 @@ class LogViewerViewModel @Inject constructor(
         when (filter.query.filterType) {
             "sql" -> {
                 val sql = filter.query.filterQuery ?: return
+                // Reset to a clean filter state first, then let executeCustomSql validate
+                // the SQL and own the customSql state. Pre-seeding filters.customSql with
+                // the raw, unvalidated query meant that if executeCustomSql rejected it
+                // (e.g. a legacy non-SELECT saved filter, which returns early without
+                // touching state) we were left wedged in custom-SQL mode with broken SQL
+                // that every later refresh() would keep re-running.
                 _state.update {
                     it.copy(
-                        filters = FilterState(customSql = sql),
+                        filters = FilterState(),
                         currentLimit = 500,
                     )
                 }

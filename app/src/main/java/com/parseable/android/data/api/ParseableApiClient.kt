@@ -134,7 +134,7 @@ class ParseableApiClient @Inject constructor() {
             } catch (e: SocketTimeoutException) {
                 ApiResult.Error(message = "Connection timed out")
             } catch (e: UnknownHostException) {
-                ApiResult.Error(message = "Unable to resolve host \"${e.message}\"")
+                ApiResult.Error(message = "Unable to resolve host")
             } catch (e: ConnectException) {
                 ApiResult.Error(message = "Connection refused. Is the server running?")
             } catch (e: SSLException) {
@@ -153,6 +153,14 @@ class ParseableApiClient @Inject constructor() {
         } catch (e: SerializationException) {
             ApiResult.Error("Invalid response format from server")
         } catch (e: IllegalArgumentException) {
+            ApiResult.Error("Unexpected response format for $description")
+        } catch (e: Exception) {
+            // kotlinx-serialization's JsonElement accessors (jsonArray/jsonObject/
+            // jsonPrimitive) throw IllegalStateException — not IllegalArgumentException —
+            // when an element has the wrong type. Catch any remaining parse-time failure
+            // so a malformed payload surfaces as an error instead of an uncaught crash.
+            // parse() is non-suspending, so there's no CancellationException to preserve.
+            Timber.w(e, "Failed to parse response for $description")
             ApiResult.Error("Unexpected response format for $description")
         }
     }
