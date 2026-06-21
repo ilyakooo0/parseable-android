@@ -88,8 +88,15 @@ class StreamsViewModel @Inject constructor(
         }
     }
 
+    private var refreshJob: Job? = null
+
     fun refresh() {
-        viewModelScope.launch {
+        // Cancel any in-flight refresh so out-of-order completions can't overwrite a newer
+        // result with a stale one (the init load and a pull-to-refresh, or two quick pulls,
+        // can otherwise race and leave the older stream list showing). Mirrors the refreshJob
+        // guard in LogViewerViewModel.
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
             try {

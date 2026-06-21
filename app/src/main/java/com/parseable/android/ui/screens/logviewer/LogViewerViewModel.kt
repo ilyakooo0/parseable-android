@@ -315,6 +315,10 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun executeCustomSql(sql: String) {
+        // Custom SQL changes the query basis, so cancel any pending search debounce that would
+        // otherwise fire a redundant refresh() ~300ms later. (Unlike the filter/time-range
+        // handlers, this path doesn't route through stopStreaming().)
+        searchJob?.cancel()
         // Drop a trailing statement terminator before we append anything — otherwise
         // "SELECT * FROM x;" would become "SELECT * FROM x; LIMIT 5000", a syntax error.
         val trimmed = sql.trim().trimEnd(';').trim()
@@ -534,6 +538,13 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun stopStreaming() {
+        // Cancel any pending search debounce too. Every query-basis change (time range, filters,
+        // saved filter, clear, new search) routes through stopStreaming(); without this, a
+        // searchJob scheduled moments before such a change would still fire refresh() ~300ms
+        // later and redundantly re-query over the just-applied state. onSearchQueryChange()
+        // re-assigns searchJob immediately after calling stopStreaming(), so its own debounce
+        // survives.
+        searchJob?.cancel()
         streamingGeneration++
         streamingJob?.cancel()
         streamingJob = null

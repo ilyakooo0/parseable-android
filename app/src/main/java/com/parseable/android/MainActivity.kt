@@ -52,13 +52,15 @@ class MainActivity : ComponentActivity() {
                         }
                         startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
 
-                        // Best-effort: drop password entries orphaned by row-collapsing
-                        // migrations (raw-SQL migrations can't reach EncryptedSharedPreferences).
+                        // Best-effort startup reconciliation for state a row-collapsing migration
+                        // (raw SQL) can't reach: re-link a dangling active_server_id to its
+                        // surviving row, then drop password entries orphaned by the collapse.
                         // Runs after startDestination so it never blocks first paint.
                         try {
+                            settingsRepository.reconcileActiveServerId()
                             settingsRepository.cleanupOrphanedServerPasswords()
                         } catch (_: Exception) {
-                            // Cleanup is non-critical; ignore failures.
+                            // Reconciliation/cleanup are non-critical; ignore failures.
                         }
                     }
 

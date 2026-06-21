@@ -172,23 +172,35 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteServer(serverId: Long) {
+        // Don't delete while a switch is in flight: both mutate the active connection and can
+        // fire conflicting one-shot navigation events (_loggedOutEvent vs _switchEvent). The
+        // UI also disables the buttons during a switch, but guard here too in case it's reached.
+        if (_state.value.isSwitching) return
         viewModelScope.launch {
-            val wasActive = settingsRepository.deleteServer(serverId)
-            if (wasActive) {
-                // The active connection was torn down, so the Server Connection / Server Info
-                // cards are now showing a deleted server. Clear them for the transition frame,
-                // then navigate back to login — there is no valid session to keep using and the
-                // in-memory api client still points at the deleted server, so any fetch from
-                // here would hit it.
-                _state.update {
-                    it.copy(
-                        serverUrl = "",
-                        username = "",
-                        aboutInfo = null,
-                        users = emptyList(),
-                    )
+            try {
+                val wasActive = settingsRepository.deleteServer(serverId)
+                if (wasActive) {
+                    // The active connection was torn down, so the Server Connection / Server Info
+                    // cards are now showing a deleted server. Clear them for the transition frame,
+                    // then navigate back to login — there is no valid session to keep using and the
+                    // in-memory api client still points at the deleted server, so any fetch from
+                    // here would hit it.
+                    _state.update {
+                        it.copy(
+                            serverUrl = "",
+                            username = "",
+                            aboutInfo = null,
+                            users = emptyList(),
+                        )
+                    }
+                    _loggedOutEvent.send(Unit)
                 }
-                _loggedOutEvent.send(Unit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Surface the failure instead of silently swallowing it, so the user knows the
+                // server wasn't removed and can retry.
+                _state.update { it.copy(error = e.message ?: "Couldn't remove server.") }
             }
         }
     }

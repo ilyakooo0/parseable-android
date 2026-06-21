@@ -40,8 +40,8 @@ fun LoginScreen(
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     val errorHandler = LocalErrorHandler.current
 
-    LaunchedEffect(state.loginSuccess) {
-        if (state.loginSuccess) {
+    LaunchedEffect(Unit) {
+        viewModel.loginSuccessEvent.collect {
             onLoginSuccess()
         }
     }

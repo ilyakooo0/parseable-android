@@ -142,7 +142,9 @@ class ParseableApiClient @Inject constructor() {
                         ApiResult.Success(body)
                     } else {
                         ApiResult.Error(
-                            message = body.ifEmpty { response.message },
+                            // ifBlank, not ifEmpty: a whitespace-only error body would otherwise
+                            // be shown verbatim as a blank message instead of the status reason.
+                            message = body.ifBlank { response.message },
                             code = response.code
                         )
                     }
@@ -358,7 +360,10 @@ class ParseableApiClient @Inject constructor() {
                 val element = json.parseToJsonElement(result.data)
                 val alertsArray = when (element) {
                     is JsonArray -> element
-                    is JsonObject -> element["alerts"]?.jsonArray ?: JsonArray(emptyList())
+                    // Use a safe cast, not the `.jsonArray` accessor: a present-but-non-array
+                    // value (e.g. {"alerts": null} or an object) makes `.jsonArray` throw, which
+                    // would surface as a parse error instead of degrading to an empty list.
+                    is JsonObject -> (element["alerts"] as? JsonArray) ?: JsonArray(emptyList())
                     else -> JsonArray(emptyList())
                 }
                 alertsArray.mapNotNull { alertElement ->

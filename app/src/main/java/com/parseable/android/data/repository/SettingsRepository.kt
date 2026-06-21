@@ -73,26 +73,32 @@ class SettingsRepository @Inject constructor(
             Timber.e(e, "Failed to read DataStore")
             emit(emptyPreferences())
         }
-        .map { prefs ->
-            // No configMutex here: this read path fires on every DataStore emission, and
-            // taking the writers' mutex serialized all reads behind in-flight writes (each
-            // writer holds configMutex across its whole dataStore.edit { }). Reading the
-            // active config is independent of the write critical sections, so it doesn't
-            // need the lock.
-            val url = prefs[serverUrlKey] ?: return@map null
-            val user = prefs[usernameKey] ?: return@map null
-            val pass = try {
-                encryptedPrefs.getString("password", null)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to read encrypted password")
-                null
-            } ?: return@map null
-            ServerConfig(
-                serverUrl = url,
-                username = user,
-                password = pass,
-                useTls = prefs[useTlsKey] ?: true,
-            )
+        .map {
+            // Read url/username/tls AND the encrypted password together under configMutex,
+            // re-reading a fresh DataStore snapshot inside the lock. Writers (switch/save/clear)
+            // hold this mutex across their whole multi-store edit, so acquiring it here guarantees
+            // the url/username returned always belong to the same server as the password. A
+            // lock-free read could otherwise pair one server's username with another server's
+            // password if a concurrent switch's writes landed between the DataStore read and the
+            // encrypted-password read. All callers consume this via .first(), so serializing the
+            // read behind the (brief) write critical sections costs at most one extra snapshot read.
+            configMutex.withLock {
+                val prefs = context.dataStore.data.first()
+                val url = prefs[serverUrlKey] ?: return@withLock null
+                val user = prefs[usernameKey] ?: return@withLock null
+                val pass = try {
+                    encryptedPrefs.getString("password", null)
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to read encrypted password")
+                    null
+                } ?: return@withLock null
+                ServerConfig(
+                    serverUrl = url,
+                    username = user,
+                    password = pass,
+                    useTls = prefs[useTlsKey] ?: true,
+                )
+            }
         }
         .flowOn(Dispatchers.IO)
 
@@ -284,6 +290,37 @@ class SettingsRepository @Inject constructor(
                 }
             }
             wasActive
+        }
+    }
+
+    /**
+     * Repair a dangling active_server_id left by a row-collapsing migration. MIGRATION_2_3 deletes
+     * duplicate saved_servers rows as raw SQL, but the active-server pointer lives in DataStore and
+     * can't be touched there — so after that upgrade it may reference one of the deleted duplicates.
+     * Re-link it to the surviving row for the active (url, username) when one exists; otherwise just
+     * clear the stale pointer. The active connection (url/username/password) is left intact, so a
+     * working session is never logged out — only the saved-servers radio selection is corrected.
+     * Best-effort, safe to run at startup.
+     */
+    suspend fun reconcileActiveServerId() {
+        configMutex.withLock {
+            val prefs = context.dataStore.data.first()
+            val activeId = prefs[activeServerIdKey] ?: return@withLock
+            if (savedServerDao.getById(activeId) != null) return@withLock
+            val url = prefs[serverUrlKey]
+            val user = prefs[usernameKey]
+            val surviving = if (url != null && user != null) {
+                savedServerDao.findByUrlAndUsername(url, user)
+            } else {
+                null
+            }
+            context.dataStore.edit { p ->
+                if (surviving != null) {
+                    p[activeServerIdKey] = surviving.id
+                } else {
+                    p.remove(activeServerIdKey)
+                }
+            }
         }
     }
 

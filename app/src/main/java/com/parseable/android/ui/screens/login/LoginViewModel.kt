@@ -7,10 +7,12 @@ import com.parseable.android.data.model.ServerConfig
 import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -22,7 +24,6 @@ data class LoginState(
     val allowInsecure: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
-    val loginSuccess: Boolean = false,
     val serverUrlError: String? = null,
     val usernameError: String? = null,
     val passwordError: String? = null,
@@ -37,6 +38,15 @@ class LoginViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(LoginState())
     val state: StateFlow<LoginState> = _state.asStateFlow()
+
+    /**
+     * Emitted exactly once when login succeeds so the screen navigates away. A one-shot [Channel]
+     * (like the codebase's other nav events) rather than a retained StateFlow flag: a retained
+     * `loginSuccess = true` would re-fire navigation on any later recomposition that re-collects
+     * the state if this ViewModel instance outlived the first navigation.
+     */
+    private val _loginSuccessEvent = Channel<Unit>(Channel.BUFFERED)
+    val loginSuccessEvent = _loginSuccessEvent.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -215,7 +225,8 @@ class LoginViewModel @Inject constructor(
                         // yet bounce back to login on next launch with nothing to restore.
                         if (settingsRepository.saveServerConfig(config)) {
                             settingsRepository.saveServer(config)
-                            _state.update { it.copy(isLoading = false, loginSuccess = true, password = "") }
+                            _state.update { it.copy(isLoading = false, password = "") }
+                            _loginSuccessEvent.send(Unit)
                         } else {
                             _state.update {
                                 it.copy(

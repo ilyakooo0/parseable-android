@@ -27,9 +27,13 @@ fun formatTimestamp(raw: String): String {
     }
     // Drop a space sitting between the time and a trailing offset/zone token:
     // "...12:00:00 +00:00" → "...12:00:00+00:00", "...12:00:00 UTC" → "...12:00:00UTC".
-    iso = iso.replace(Regex("(?<=\\d)\\s+(?=[+\\-Z]|UTC)"), "")
-    // Map a textual "UTC" suffix to the ISO 'Z' the parsers understand.
+    iso = iso.replace(Regex("(?<=\\d)\\s+(?=[+\\-Z]|UTC|GMT)"), "")
+    // Map a textual "UTC"/"GMT" suffix to the ISO 'Z' the parsers understand (GMT is exactly
+    // UTC, so this is a safe rewrite). Other textual zones (e.g. "PST") are ambiguous, so they
+    // are left untouched and fall through to the raw-string passthrough rather than risk
+    // displaying a wrong local time.
     if (iso.endsWith("UTC")) iso = iso.removeSuffix("UTC") + "Z"
+    else if (iso.endsWith("GMT")) iso = iso.removeSuffix("GMT") + "Z"
 
     // Fast path: an ISO-8601 instant in UTC (e.g. "2026-06-20T12:00:00Z").
     try {

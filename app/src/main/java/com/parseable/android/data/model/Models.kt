@@ -1,9 +1,36 @@
 package com.parseable.android.data.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+
+/**
+ * Deserializes a value that some Parseable builds return as a JSON string ("12345") and other
+ * builds return as a JSON number (12345) into a [String], so stats parsing doesn't fail outright
+ * on the numeric form. Applied to the size fields below, which are rendered via [formatBytes]
+ * (itself tolerant of both a raw byte count and a pre-formatted string).
+ */
+object FlexibleStringSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FlexibleString", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: String) = encoder.encodeString(value)
+
+    override fun deserialize(decoder: Decoder): String {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeString()
+        val element = jsonDecoder.decodeJsonElement()
+        return (element as? JsonPrimitive)?.content ?: element.toString()
+    }
+}
 
 /**
  * Server connection configuration stored in DataStore.
@@ -47,25 +74,31 @@ data class StreamStats(
 @Serializable
 data class IngestionStats(
     val count: Long? = null,
+    @Serializable(with = FlexibleStringSerializer::class)
     val size: String? = null,
     val format: String? = null,
     @SerialName("lifetime_count")
     val lifetimeCount: Long? = null,
     @SerialName("lifetime_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val lifetimeSize: String? = null,
     @SerialName("deleted_count")
     val deletedCount: Long? = null,
     @SerialName("deleted_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val deletedSize: String? = null,
 )
 
 @Serializable
 data class StorageStats(
+    @Serializable(with = FlexibleStringSerializer::class)
     val size: String? = null,
     val format: String? = null,
     @SerialName("lifetime_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val lifetimeSize: String? = null,
     @SerialName("deleted_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val deletedSize: String? = null,
 )
 

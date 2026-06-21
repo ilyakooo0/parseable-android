@@ -9,6 +9,8 @@ import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -35,6 +37,17 @@ class LoginViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    /**
+     * Start collecting the one-shot login-success events into a list (on the eager
+     * UnconfinedTestDispatcher) before the action under test, so the success emission is observed.
+     * The collector lives in backgroundScope, which runTest auto-cancels.
+     */
+    private fun TestScope.collectSuccessEvents(): MutableList<Unit> {
+        val events = mutableListOf<Unit>()
+        backgroundScope.launch(testDispatcher) { viewModel.loginSuccessEvent.toList(events) }
+        return events
     }
 
     @Test
@@ -65,6 +78,11 @@ class LoginViewModelTest {
     fun `onLogin succeeds with valid credentials`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
         coEvery { repository.verifyServer() } returns ApiResult.Success(AboutInfo(version = "1.0"))
+        // Reach the success branch deterministically: the login-success event only fires when the
+        // credentials were durably saved.
+        coEvery { settingsRepository.saveServerConfig(any()) } returns true
+
+        val events = collectSuccessEvents()
 
         viewModel.onServerUrlChange("https://test.parseable.com")
         viewModel.onUsernameChange("admin")
@@ -72,7 +90,7 @@ class LoginViewModelTest {
         viewModel.onLogin()
 
         val state = viewModel.state.value
-        assertTrue(state.loginSuccess)
+        assertEquals(1, events.size)
         assertFalse(state.isLoading)
         coVerify { settingsRepository.saveServerConfig(any()) }
     }
@@ -81,13 +99,15 @@ class LoginViewModelTest {
     fun `onLogin fails when connection fails`() = runTest {
         coEvery { repository.testConnection() } returns ApiResult.Error("Connection refused", 0)
 
+        val events = collectSuccessEvents()
+
         viewModel.onServerUrlChange("https://bad.server")
         viewModel.onUsernameChange("admin")
         viewModel.onPasswordChange("password")
         viewModel.onLogin()
 
         val state = viewModel.state.value
-        assertFalse(state.loginSuccess)
+        assertEquals(0, events.size)
         assertNotNull(state.error)
         assertTrue(state.error!!.contains("Connection failed"))
     }
@@ -97,13 +117,15 @@ class LoginViewModelTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
         coEvery { repository.verifyServer() } returns ApiResult.Error("not parseable", 404)
 
+        val events = collectSuccessEvents()
+
         viewModel.onServerUrlChange("https://test.com")
         viewModel.onUsernameChange("admin")
         viewModel.onPasswordChange("password")
         viewModel.onLogin()
 
         val state = viewModel.state.value
-        assertFalse(state.loginSuccess)
+        assertEquals(0, events.size)
         assertNotNull(state.error)
         assertTrue(state.error!!.contains("doesn't appear to be Parseable"))
     }
@@ -113,13 +135,15 @@ class LoginViewModelTest {
         coEvery { repository.testConnection() } returns ApiResult.Success("ok")
         coEvery { repository.verifyServer() } returns ApiResult.Error("Unauthorized", 401)
 
+        val events = collectSuccessEvents()
+
         viewModel.onServerUrlChange("https://test.parseable.com")
         viewModel.onUsernameChange("admin")
         viewModel.onPasswordChange("wrongpass")
         viewModel.onLogin()
 
         val state = viewModel.state.value
-        assertFalse(state.loginSuccess)
+        assertEquals(0, events.size)
         assertNotNull(state.error)
         assertTrue(state.error!!.contains("Invalid credentials"))
         assertFalse(state.error!!.contains("doesn't appear to be Parseable"))

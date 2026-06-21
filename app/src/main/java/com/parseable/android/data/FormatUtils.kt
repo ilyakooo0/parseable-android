@@ -2,7 +2,10 @@ package com.parseable.android.data
 
 import java.util.Locale
 
-private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
+// "EB" is included so PB is never the last unit: the promotion guard below (which only fires
+// when a higher unit exists) then handles a PB value in [1023.5, 1024) — promoting it to "1.00 EB"
+// instead of rendering "1024 PB". The remaining unhandled top-unit case sits at ~1.2e24 bytes.
+private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB", "EB")
 
 /**
  * Converts a raw byte-count string (e.g. "123456789") to a human-readable
