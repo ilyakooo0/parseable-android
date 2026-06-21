@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
@@ -762,21 +764,37 @@ class LogViewerViewModel @Inject constructor(
 
     // --- Saved Filters (synced with Parseable server) ---
 
+    // Serializes loadSavedFilters / saveCurrentFilter / deleteSavedFilter so they never
+    // interleave. Without this, a wholesale-overwrite load completing after a concurrent
+    // save (append) or delete (remove) would silently drop the local add/remove — a
+    // read-modify-write race across coroutines.
+    private val savedFiltersMutex = Mutex()
+
     fun loadSavedFilters() {
+        // Capture the stream this load is for; if the user navigates to a different stream
+        // before it completes, bind the result to the right stream instead of clobbering the
+        // new stream's filter list with another stream's results.
+        val stream = _state.value.streamName
         viewModelScope.launch {
-            _state.update { it.copy(savedFilters = it.savedFilters.copy(isLoading = true, error = null)) }
-            when (val result = repository.listFilters()) {
-                is ApiResult.Success -> {
-                    val streamFilters = result.data
-                        .filter { it.streamName == _state.value.streamName }
-                        .sortedBy { it.filterName.lowercase() }
-                    _state.update {
-                        it.copy(savedFilters = it.savedFilters.copy(filters = streamFilters, isLoading = false))
+            savedFiltersMutex.withLock {
+                _state.update { it.copy(savedFilters = it.savedFilters.copy(isLoading = true, error = null)) }
+                when (val result = repository.listFilters()) {
+                    is ApiResult.Success -> {
+                        if (_state.value.streamName != stream) {
+                            _state.update { it.copy(savedFilters = it.savedFilters.copy(isLoading = false)) }
+                            return@withLock
+                        }
+                        val streamFilters = result.data
+                            .filter { it.streamName == stream }
+                            .sortedBy { it.filterName.lowercase() }
+                        _state.update {
+                            it.copy(savedFilters = it.savedFilters.copy(filters = streamFilters, isLoading = false))
+                        }
                     }
-                }
-                is ApiResult.Error -> {
-                    _state.update {
-                        it.copy(savedFilters = it.savedFilters.copy(isLoading = false, error = result.userMessage))
+                    is ApiResult.Error -> {
+                        _state.update {
+                            it.copy(savedFilters = it.savedFilters.copy(isLoading = false, error = result.userMessage))
+                        }
                     }
                 }
             }
@@ -788,6 +806,7 @@ class LogViewerViewModel @Inject constructor(
         if (current.streamName.isEmpty()) return
 
         viewModelScope.launch {
+            savedFiltersMutex.withLock {
             _state.update { it.copy(savedFilters = it.savedFilters.copy(isSaving = true, error = null)) }
 
             val query = if (current.filters.customSql.isNotBlank()) {
@@ -848,6 +867,7 @@ class LogViewerViewModel @Inject constructor(
                         it.copy(savedFilters = it.savedFilters.copy(isSaving = false, error = result.userMessage))
                     }
                 }
+            }
             }
         }
     }
@@ -910,17 +930,19 @@ class LogViewerViewModel @Inject constructor(
 
     fun deleteSavedFilter(filterId: String) {
         viewModelScope.launch {
-            when (repository.deleteFilter(filterId)) {
-                is ApiResult.Success -> {
-                    _state.update {
-                        it.copy(
-                            savedFilters = it.savedFilters.copy(
-                                filters = it.savedFilters.filters.filter { f -> f.filterId != filterId },
-                            ),
-                        )
+            savedFiltersMutex.withLock {
+                when (repository.deleteFilter(filterId)) {
+                    is ApiResult.Success -> {
+                        _state.update {
+                            it.copy(
+                                savedFilters = it.savedFilters.copy(
+                                    filters = it.savedFilters.filters.filter { f -> f.filterId != filterId },
+                                ),
+                            )
+                        }
                     }
+                    is ApiResult.Error -> { /* Silently ignore — will show on next reload */ }
                 }
-                is ApiResult.Error -> { /* Silently ignore — will show on next reload */ }
             }
         }
     }

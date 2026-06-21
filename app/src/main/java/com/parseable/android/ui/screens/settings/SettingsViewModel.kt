@@ -34,6 +34,7 @@ data class SettingsState(
     val savedServers: List<SavedServer> = emptyList(),
     val activeServerId: Long? = null,
     val isSwitching: Boolean = false,
+    val isDeleting: Boolean = false,
 )
 
 @HiltViewModel
@@ -138,8 +139,9 @@ class SettingsViewModel @Inject constructor(
 
     fun switchToServer(serverId: Long) {
         // Guard against a second tap launching a concurrent switch that would send a
-        // duplicate _switchEvent and navigate twice.
-        if (_state.value.isSwitching) return
+        // duplicate _switchEvent and navigate twice, and against racing an in-flight delete
+        // (both mutate the active connection and fire conflicting one-shot nav events).
+        if (_state.value.isSwitching || _state.value.isDeleting) return
         viewModelScope.launch {
             _state.update { it.copy(isSwitching = true, error = null) }
             try {
@@ -172,11 +174,15 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteServer(serverId: Long) {
-        // Don't delete while a switch is in flight: both mutate the active connection and can
-        // fire conflicting one-shot navigation events (_loggedOutEvent vs _switchEvent). The
-        // UI also disables the buttons during a switch, but guard here too in case it's reached.
-        if (_state.value.isSwitching) return
+        // Don't delete while a switch or another delete is in flight: all mutate the active
+        // connection and can fire conflicting one-shot navigation events (_loggedOutEvent vs
+        // _switchEvent), or send _loggedOutEvent twice on a double-tap of the active server.
+        // The UI also disables the buttons during a switch, but guard here too. isDeleting is
+        // set inside the launch (viewModelScope is Main.immediate, so it runs synchronously
+        // before this call returns) and cleared in finally, mirroring switchToServer.
+        if (_state.value.isSwitching || _state.value.isDeleting) return
         viewModelScope.launch {
+            _state.update { it.copy(isDeleting = true) }
             try {
                 val wasActive = settingsRepository.deleteServer(serverId)
                 if (wasActive) {
@@ -201,6 +207,10 @@ class SettingsViewModel @Inject constructor(
                 // Surface the failure instead of silently swallowing it, so the user knows the
                 // server wasn't removed and can retry.
                 _state.update { it.copy(error = e.message ?: "Couldn't remove server.") }
+            } finally {
+                // Always clear the flag, even on exception/cancellation, or the guard above would
+                // make deletion permanently impossible for this ViewModel instance.
+                _state.update { it.copy(isDeleting = false) }
             }
         }
     }

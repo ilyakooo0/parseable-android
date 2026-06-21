@@ -214,6 +214,8 @@ sealed class ApiResult<out T> {
         val isUnauthorized: Boolean get() = code == 401
         val isNotFound: Boolean get() = code == 404
         val isServerError: Boolean get() = code in 500..599
+        // Only genuine transport failures use code 0. A successful HTTP response whose body
+        // failed to parse carries PARSE_ERROR_CODE so it isn't mislabeled as a network error.
         val isNetworkError: Boolean get() = code == 0
 
         val userMessage: String get() = when {
@@ -230,5 +232,15 @@ sealed class ApiResult<out T> {
             }
             else -> message
         }
+    }
+
+    companion object {
+        /**
+         * Code used for client-side response-parsing failures: the HTTP request succeeded
+         * but the body was malformed/unexpected. Distinct from 0 (network/transport failure)
+         * so [Error.isNetworkError] and [Error.userMessage] don't show a misleading
+         * "Network error" for what is actually a server-data problem.
+         */
+        const val PARSE_ERROR_CODE = -1
     }
 }

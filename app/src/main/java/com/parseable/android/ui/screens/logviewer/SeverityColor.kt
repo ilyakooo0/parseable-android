@@ -65,8 +65,7 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
     trimmed.toIntOrNull()?.let { num ->
         return when {
             // Syslog severity (0 = emergency .. 7 = debug)
-            fieldName.equals("syslog_severity", ignoreCase = true) ||
-                fieldName.equals("priority", ignoreCase = true) -> when (num) {
+            fieldName.equals("syslog_severity", ignoreCase = true) -> when (num) {
                 0, 1, 2 -> LogSeverity.FATAL   // emergency, alert, critical
                 3 -> LogSeverity.ERROR
                 4 -> LogSeverity.WARNING
@@ -74,6 +73,19 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
                 6 -> LogSeverity.INFO           // informational
                 7 -> LogSeverity.DEBUG
                 else -> LogSeverity.UNKNOWN
+            }
+            // Syslog "priority" (PRI) is the encoded value facility*8 + severity (0..191), so the
+            // severity is the low 3 bits. For a bare 0..7 this is identity; a real PRI like 134
+            // decodes to severity 6 (info) instead of falling through to UNKNOWN.
+            fieldName.equals("priority", ignoreCase = true) -> when {
+                num < 0 || num > 191 -> LogSeverity.UNKNOWN
+                else -> when (num % 8) {
+                    0, 1, 2 -> LogSeverity.FATAL   // emergency, alert, critical
+                    3 -> LogSeverity.ERROR
+                    4 -> LogSeverity.WARNING
+                    5, 6 -> LogSeverity.INFO        // notice, informational
+                    else -> LogSeverity.DEBUG       // 7
+                }
             }
             // HTTP status codes. Bound every branch to the valid HTTP range (100..599):
             // `status` is a very generic field name, so an unbounded `>= 500`/`>= 400`

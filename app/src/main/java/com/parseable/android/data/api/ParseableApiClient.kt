@@ -169,9 +169,9 @@ class ParseableApiClient @Inject constructor() {
         return try {
             ApiResult.Success(parse())
         } catch (e: SerializationException) {
-            ApiResult.Error("Invalid response format from server")
+            ApiResult.Error("Invalid response format from server", code = ApiResult.PARSE_ERROR_CODE)
         } catch (e: IllegalArgumentException) {
-            ApiResult.Error("Unexpected response format for $description")
+            ApiResult.Error("Unexpected response format for $description", code = ApiResult.PARSE_ERROR_CODE)
         } catch (e: Exception) {
             // kotlinx-serialization's JsonElement accessors (jsonArray/jsonObject/
             // jsonPrimitive) throw IllegalStateException — not IllegalArgumentException —
@@ -179,7 +179,7 @@ class ParseableApiClient @Inject constructor() {
             // so a malformed payload surfaces as an error instead of an uncaught crash.
             // parse() is non-suspending, so there's no CancellationException to preserve.
             Timber.w(e, "Failed to parse response for $description")
-            ApiResult.Error("Unexpected response format for $description")
+            ApiResult.Error("Unexpected response format for $description", code = ApiResult.PARSE_ERROR_CODE)
         }
     }
 
@@ -230,7 +230,7 @@ class ParseableApiClient @Inject constructor() {
                         }
                         ApiResult.Success(streams)
                     } catch (e2: Exception) {
-                        ApiResult.Error("Failed to parse streams: ${e2.message}")
+                        ApiResult.Error("Failed to parse streams: ${e2.message}", code = ApiResult.PARSE_ERROR_CODE)
                     }
                 }
             }
@@ -428,7 +428,21 @@ class ParseableApiClient @Inject constructor() {
         val request = buildRequest("/api/v1/filters").get().build()
         return when (val result = executeRequest(request)) {
             is ApiResult.Success -> parseResponse("filters") {
-                json.decodeFromString<List<SavedFilter>>(result.data)
+                val element = json.parseToJsonElement(result.data)
+                val array = (element as? JsonArray)
+                    ?: throw IllegalArgumentException("Expected JSON array, got ${element::class.simpleName}")
+                array.mapNotNull { filterElement ->
+                    try {
+                        val filter = json.decodeFromJsonElement<SavedFilter>(filterElement)
+                        // coerceInputValues turns a server-null identity field into "". Skip such
+                        // entries rather than surface a nameless/stream-less ghost filter (and so
+                        // one malformed entry doesn't fail the whole list).
+                        if (filter.filterName.isBlank() || filter.streamName.isBlank()) null else filter
+                    } catch (e: Exception) {
+                        Timber.w(e, "Skipping malformed filter entry")
+                        null
+                    }
+                }
             }
             is ApiResult.Error -> result
         }
