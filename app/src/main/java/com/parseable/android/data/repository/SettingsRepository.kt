@@ -249,10 +249,12 @@ class SettingsRepository @Inject constructor(
     /**
      * Remove a saved server and its stored password.
      * If the deleted server was the active one, the active server ID is cleared.
+     * Returns true if the deleted server was the active connection (so callers can clear any
+     * now-stale displayed server info), false otherwise.
      */
-    suspend fun deleteServer(serverId: Long) {
-        configMutex.withLock {
-            val server = savedServerDao.getById(serverId) ?: return@withLock
+    suspend fun deleteServer(serverId: Long): Boolean {
+        return configMutex.withLock {
+            val server = savedServerDao.getById(serverId) ?: return@withLock false
             withContext(Dispatchers.IO) {
                 // commit() so the password is durably removed before we drop the row that
                 // references its key — otherwise a crash could orphan the encrypted entry.
@@ -266,7 +268,8 @@ class SettingsRepository @Inject constructor(
             // serverConfig still emits a valid config and the app stays logged in to the
             // server we just deleted (and restores that session on next launch).
             val currentActiveId = context.dataStore.data.first()[activeServerIdKey]
-            if (currentActiveId == serverId) {
+            val wasActive = currentActiveId == serverId
+            if (wasActive) {
                 context.dataStore.edit { prefs ->
                     prefs.remove(activeServerIdKey)
                     prefs.remove(serverUrlKey)
@@ -277,6 +280,7 @@ class SettingsRepository @Inject constructor(
                     encryptedPrefs.edit().remove("password").commit()
                 }
             }
+            wasActive
         }
     }
 }

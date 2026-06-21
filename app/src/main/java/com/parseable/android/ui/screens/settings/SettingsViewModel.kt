@@ -153,7 +153,21 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteServer(serverId: Long) {
         viewModelScope.launch {
-            settingsRepository.deleteServer(serverId)
+            val wasActive = settingsRepository.deleteServer(serverId)
+            if (wasActive) {
+                // The active connection was torn down, so the Server Connection / Server Info
+                // cards are now showing a deleted server. Clear them instead of leaving stale
+                // details on screen until a manual refresh. (Don't reload: the in-memory api
+                // client still points at the deleted server, so a fetch would hit it.)
+                _state.update {
+                    it.copy(
+                        serverUrl = "",
+                        username = "",
+                        aboutInfo = null,
+                        users = emptyList(),
+                    )
+                }
+            }
         }
     }
 }

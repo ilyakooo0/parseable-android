@@ -128,6 +128,7 @@ class SeverityDetectionTest {
 
     @Test
     fun `HTTP status code mapping`() {
+        assertEquals(LogSeverity.INFO, detectSeverity(logWith("status" to "100")))
         assertEquals(LogSeverity.INFO, detectSeverity(logWith("status" to "200")))
         assertEquals(LogSeverity.INFO, detectSeverity(logWith("status" to "301")))
         assertEquals(LogSeverity.WARNING, detectSeverity(logWith("status" to "404")))

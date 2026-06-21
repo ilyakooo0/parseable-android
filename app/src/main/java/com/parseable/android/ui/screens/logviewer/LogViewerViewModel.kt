@@ -311,16 +311,21 @@ class LogViewerViewModel @Inject constructor(
     }
 
     fun executeCustomSql(sql: String) {
-        val trimmed = sql.trim()
+        // Drop a trailing statement terminator before we append anything — otherwise
+        // "SELECT * FROM x;" would become "SELECT * FROM x; LIMIT 5000", a syntax error.
+        val trimmed = sql.trim().trimEnd(';').trim()
         if (!trimmed.uppercase().startsWith("SELECT")) {
             _state.update { it.copy(error = "Only SELECT queries are allowed") }
             return
         }
-        // Enforce a LIMIT to prevent OOM from unbounded queries. Match an actual
-        // `LIMIT <n>` clause rather than the bare word, so a string literal like
-        // 'LIMIT EXCEEDED' doesn't disable the safety limit.
-        val hasLimit = Regex("(?i)\\bLIMIT\\s+\\d+").containsMatchIn(trimmed)
-        val safeSql = if (!hasLimit) {
+        // Enforce a LIMIT to prevent OOM from unbounded queries. Only honor a *top-level*
+        // `LIMIT <n>` (optionally with OFFSET) anchored at the end of the statement — a
+        // LIMIT inside a subquery doesn't bound the outer result set, so matching it
+        // anywhere would let an unbounded outer query slip past the safety limit. Anchoring
+        // at the end also means a string literal like 'LIMIT EXCEEDED' can't disable it.
+        val hasTopLevelLimit =
+            Regex("(?i)\\bLIMIT\\s+\\d+(\\s+OFFSET\\s+\\d+)?\\s*$").containsMatchIn(trimmed)
+        val safeSql = if (!hasTopLevelLimit) {
             "$trimmed LIMIT $MAX_LOAD_LIMIT"
         } else {
             trimmed
@@ -622,11 +627,8 @@ class LogViewerViewModel @Inject constructor(
                     // to the newest would skip them forever. In that case advance only to the
                     // oldest row we did fetch, so the next poll re-queries forward and closes
                     // the gap (re-fetched rows are deduped below).
-                    val boundaryLog = if (newLogs.size >= STREAMING_MAX_LOGS) {
-                        newLogs.lastOrNull()
-                    } else {
-                        newLogs.firstOrNull()
-                    }
+                    val fullPage = newLogs.size >= STREAMING_MAX_LOGS
+                    val boundaryLog = if (fullPage) newLogs.lastOrNull() else newLogs.firstOrNull()
                     val boundaryTimestamp = try {
                         boundaryLog?.get("p_timestamp")?.jsonPrimitive?.content
                     } catch (_: Exception) {
@@ -637,7 +639,25 @@ class LogViewerViewModel @Inject constructor(
                     // which the query API may reject or misparse — that would stall live-tail
                     // after the first batch. If it can't be parsed, leave lastSeenTimestamp as-is
                     // (the inclusive startTime simply re-fetches the window; rows are deduped).
-                    val normalized = boundaryTimestamp?.let { normalizeBoundaryTimestamp(it) }
+                    var normalized = boundaryTimestamp?.let { normalizeBoundaryTimestamp(it) }
+                    // On a saturated (full) page the boundary is the OLDEST fetched row so the
+                    // next poll re-queries forward and closes the LIMIT gap. But if that oldest
+                    // row carries the SAME timestamp we're already at — e.g. a burst of more than
+                    // STREAMING_MAX_LOGS rows sharing one millisecond, or the parse failing — the
+                    // boundary wouldn't move and we'd re-query the identical window forever. Fall
+                    // back to the NEWEST row's timestamp to guarantee forward progress; the
+                    // skipped backlog would be evicted by the display cap anyway.
+                    if (fullPage && (normalized == null || normalized == lastSeenTimestamp)) {
+                        val newestTimestamp = try {
+                            newLogs.firstOrNull()?.get("p_timestamp")?.jsonPrimitive?.content
+                        } catch (_: Exception) {
+                            null
+                        }
+                        val newestNormalized = newestTimestamp?.let { normalizeBoundaryTimestamp(it) }
+                        if (newestNormalized != null && newestNormalized != lastSeenTimestamp) {
+                            normalized = newestNormalized
+                        }
+                    }
                     if (normalized != null) {
                         lastSeenTimestamp = normalized
                     }

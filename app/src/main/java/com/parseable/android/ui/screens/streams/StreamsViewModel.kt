@@ -170,6 +170,12 @@ class StreamsViewModel @Inject constructor(
             }
         }
         retryJobs[streamName] = job
+        // Drop the entry once the retry finishes so the map doesn't accumulate completed
+        // jobs for the ViewModel's lifetime. Guard with an identity check so we never remove
+        // a newer retry that has since replaced this one for the same stream.
+        job.invokeOnCompletion {
+            if (retryJobs[streamName] === job) retryJobs.remove(streamName)
+        }
     }
 
     private suspend fun loadSingleStreamStats(streamName: String) {
