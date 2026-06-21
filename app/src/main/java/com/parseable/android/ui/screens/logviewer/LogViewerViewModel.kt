@@ -87,6 +87,10 @@ data class LogViewerState(
     val hasMore: Boolean = false,
     val customStartTime: Long? = null,
     val customEndTime: Long? = null,
+    // Upper time bound (epoch millis) fixed at the first page of a paging session, so loadMore()
+    // doesn't slide a relative ("last N minutes") window forward as it re-queries. Null until the
+    // first refresh of a session; re-anchored whenever currentLimit resets to the initial page.
+    val pageAnchorTime: Long? = null,
 ) {
     // Convenience accessors for backward compatibility with Screen
     val searchQuery: String get() = filters.searchQuery
@@ -353,11 +357,19 @@ class LogViewerViewModel @Inject constructor(
         // fresh results with stale ones (filter/search/time-range/loadMore all call refresh()).
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
+            // Anchor the upper time bound on the first page of a paging session (currentLimit at
+            // its initial value) and reuse it for subsequent loadMore() pages. Otherwise a relative
+            // range would recompute "now" on every page in getTimeRange(), sliding the window and
+            // duplicating/dropping rows on an actively-ingesting stream.
+            val anchor = _state.value.let { s ->
+                if (s.currentLimit <= 500) System.currentTimeMillis() else s.pageAnchorTime
+            }
             _state.update {
                 it.copy(
                     isLoading = true,
                     error = null,
                     streaming = it.streaming.copy(streamingError = null),
+                    pageAnchorTime = anchor,
                 )
             }
 
@@ -453,7 +465,9 @@ class LogViewerViewModel @Inject constructor(
             )
             return Pair(start.format(dateFormatter), end.format(dateFormatter))
         }
-        val now = ZonedDateTime.now(ZoneOffset.UTC)
+        val now = current.pageAnchorTime
+            ?.let { ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), ZoneOffset.UTC) }
+            ?: ZonedDateTime.now(ZoneOffset.UTC)
         val start = now.minusMinutes(current.selectedTimeRange.minutes)
         return Pair(
             start.format(dateFormatter),

@@ -604,17 +604,18 @@ fun LogViewerScreen(
                         val start = dateRangePickerState.selectedStartDateMillis
                         val end = dateRangePickerState.selectedEndDateMillis
                         if (start != null && end != null) {
-                            // DateRangePicker returns midnight UTC for the selected date.
-                            // Adjust to cover the full end day in the user's local timezone:
-                            // Convert to local date, get end-of-day, convert back to UTC millis.
+                            // DateRangePicker returns midnight UTC for the selected date, so the
+                            // calendar date must be read back in UTC — reading it in the local zone
+                            // would roll west-of-UTC users to the previous day. Once we have the
+                            // tapped date, build the boundaries to cover the full day locally.
                             val localZone = java.time.ZoneId.systemDefault()
                             val endLocalDate = java.time.Instant.ofEpochMilli(end)
-                                .atZone(localZone).toLocalDate()
+                                .atZone(java.time.ZoneOffset.UTC).toLocalDate()
                             val endOfDayUtc = endLocalDate.plusDays(1)
                                 .atStartOfDay(localZone)
                                 .toInstant().toEpochMilli() - 1
                             val startLocalDate = java.time.Instant.ofEpochMilli(start)
-                                .atZone(localZone).toLocalDate()
+                                .atZone(java.time.ZoneOffset.UTC).toLocalDate()
                             val startUtc = startLocalDate
                                 .atStartOfDay(localZone)
                                 .toInstant().toEpochMilli()

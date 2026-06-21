@@ -164,9 +164,9 @@ class SettingsRepository @Inject constructor(
     /**
      * Persist the current server connection as a saved server entry.
      * If a server with the same URL and username already exists, updates it.
-     * Returns the server ID.
+     * Returns the server ID, or null if the credentials could not be persisted.
      */
-    suspend fun saveServer(config: ServerConfig): Long {
+    suspend fun saveServer(config: ServerConfig): Long? {
         return configMutex.withLock {
             val existing = savedServerDao.findByUrlAndUsername(config.serverUrl, config.username)
             // Use a UUID, not System.currentTimeMillis(): two distinct new servers saved
@@ -189,8 +189,11 @@ class SettingsRepository @Inject constructor(
                 encryptedPrefs.edit().putString(passwordKey, config.password).commit()
             }
             if (!passwordSaved) {
+                // Return null rather than existing?.id: reusing the existing id would look like a
+                // successful update to the caller, while the new password was never written and a
+                // later switchToServer would silently load the stale credentials.
                 Timber.e("Failed to persist saved-server credentials securely; aborting saveServer")
-                return@withLock existing?.id ?: -1L
+                return@withLock null
             }
             val id = savedServerDao.insert(server)
 

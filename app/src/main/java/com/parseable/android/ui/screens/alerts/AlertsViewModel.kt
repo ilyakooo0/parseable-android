@@ -39,9 +39,10 @@ class AlertsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, error = null) }
             when (val result = repository.listAlerts()) {
                 is ApiResult.Success -> {
-                    val sorted = result.data.sortedBy { a ->
-                        (a.name ?: a.title ?: "").lowercase()
-                    }
+                    // Sort by the same field the UI shows (displayName = title ?: name), otherwise
+                    // alerts that carry both fields, or a mix of per-stream and global formats,
+                    // render in an order that doesn't match their visible labels.
+                    val sorted = result.data.sortedBy { it.displayName.lowercase() }
                     _state.update { it.copy(alerts = sorted, isLoading = false) }
                 }
                 is ApiResult.Error -> {
