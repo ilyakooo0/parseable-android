@@ -452,6 +452,12 @@ class LogViewerViewModel @Inject constructor(
      */
     fun pullRefresh() {
         if (_state.value.streamName.isEmpty()) return
+        // While live-tailing, the poller continuously prepends fresh rows; a concurrent refresh()
+        // would replace the list with a full page at the same time, racing the poller on logs/
+        // logKeys/streamingError and producing duplicated or dropped rows plus a stale "+N" badge.
+        // The displayed logs are already current under streaming, so the pull is a no-op here —
+        // mirror loadMore()'s guard rather than the stopStreaming() path the other mutators take.
+        if (_state.value.streaming.isStreaming) return
         _state.update { it.copy(currentLimit = 500) }
         refresh()
     }

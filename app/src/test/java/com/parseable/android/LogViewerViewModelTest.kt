@@ -186,6 +186,24 @@ class LogViewerViewModelTest {
     }
 
     @Test
+    fun `pullRefresh is a no-op while streaming`() {
+        viewModel.initialize("test")
+        // Page out so currentLimit is no longer at its initial 500.
+        viewModel.loadMore()
+        assertEquals(1000, viewModel.state.value.currentLimit)
+
+        viewModel.toggleStreaming()
+        assertTrue(viewModel.state.value.isStreaming)
+
+        // While live-tailing, pullRefresh must not run refresh() (which would reset the limit
+        // to 500 and race the streaming poller). Streaming stays on and the limit is untouched.
+        viewModel.pullRefresh()
+
+        assertTrue(viewModel.state.value.isStreaming)
+        assertEquals(1000, viewModel.state.value.currentLimit)
+    }
+
+    @Test
     fun `toggleStreaming starts and stops`() {
         viewModel.initialize("test")
 
