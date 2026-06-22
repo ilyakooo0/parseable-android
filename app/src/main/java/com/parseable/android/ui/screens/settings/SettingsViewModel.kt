@@ -9,12 +9,15 @@ import com.parseable.android.data.repository.ParseableRepository
 import com.parseable.android.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,6 +34,7 @@ data class SettingsState(
     val savedServers: List<SavedServer> = emptyList(),
     val activeServerId: Long? = null,
     val isSwitching: Boolean = false,
+    val isDeleting: Boolean = false,
 )
 
 @HiltViewModel
@@ -42,9 +46,25 @@ class SettingsViewModel @Inject constructor(
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
-    /** Emits the server ID after a successful switch so the screen can navigate. */
-    private val _switchEvent = MutableStateFlow<Long?>(null)
-    val switchEvent: StateFlow<Long?> = _switchEvent.asStateFlow()
+    /**
+     * Emits the server ID after a successful switch so the screen can navigate. A [Channel]
+     * (matching the codebase's other one-shot events) so the navigation fires exactly once and
+     * is not re-delivered on rotation — a StateFlow retains its last value and would re-navigate
+     * when the screen re-collects after a config change.
+     */
+    private val _switchEvent = Channel<Long>(Channel.BUFFERED)
+    val switchEvent = _switchEvent.receiveAsFlow()
+
+    /**
+     * Emitted when the currently-active server is deleted. The active connection has been torn
+     * down, so there is no valid session left — the screen must navigate back to login rather
+     * than leave the user on a Settings screen pointed at a deleted server. A one-shot [Channel]
+     * for the same reason as [switchEvent].
+     */
+    private val _loggedOutEvent = Channel<Unit>(Channel.BUFFERED)
+    val loggedOutEvent = _loggedOutEvent.receiveAsFlow()
+
+    private var loadJob: Job? = null
 
     init {
         load()
@@ -61,7 +81,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun load() {
-        viewModelScope.launch {
+        // Cancel any in-flight load so a slower completion can't overwrite a newer one.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
             val config = settingsRepository.serverConfig.first()
@@ -84,24 +106,24 @@ class SettingsViewModel @Inject constructor(
 
                 val userNames = (usersResult as? ApiResult.Success)?.data?.mapNotNull { obj ->
                     try {
-                        obj["id"]?.jsonPrimitive?.content
-                            ?: obj["username"]?.jsonPrimitive?.content
+                        obj["username"]?.jsonPrimitive?.content
+                            ?: obj["id"]?.jsonPrimitive?.content
                     } catch (_: IllegalStateException) {
                         null
                     }
                 } ?: emptyList()
 
-                val errors = listOfNotNull(
-                    (aboutResult as? ApiResult.Error)?.userMessage,
-                    (usersResult as? ApiResult.Error)?.userMessage,
-                ).distinct().joinToString("\n").ifEmpty { null }
+                // Only treat a failure of the primary server-info call (/about) as a blocking
+                // error. The user list (/user) is secondary and is commonly forbidden for
+                // restricted accounts — failing it shouldn't hide otherwise-valid server info.
+                val error = (aboutResult as? ApiResult.Error)?.userMessage
 
                 _state.update {
                     it.copy(
                         aboutInfo = (aboutResult as? ApiResult.Success)?.data,
                         users = userNames,
                         isLoading = false,
-                        error = errors,
+                        error = error,
                     )
                 }
             } catch (e: CancellationException) {
@@ -116,24 +138,80 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun switchToServer(serverId: Long) {
+        // Guard against a second tap launching a concurrent switch that would send a
+        // duplicate _switchEvent and navigate twice, and against racing an in-flight delete
+        // (both mutate the active connection and fire conflicting one-shot nav events).
+        if (_state.value.isSwitching || _state.value.isDeleting) return
         viewModelScope.launch {
-            _state.update { it.copy(isSwitching = true) }
-            val config = settingsRepository.switchToServer(serverId)
-            if (config != null) {
-                repository.configure(config)
-                _switchEvent.value = serverId
+            _state.update { it.copy(isSwitching = true, error = null) }
+            try {
+                val config = settingsRepository.switchToServer(serverId)
+                if (config != null) {
+                    repository.configure(config)
+                    _switchEvent.send(serverId)
+                } else {
+                    // Surface the failure instead of silently dropping the spinner — a null
+                    // result means the saved credentials couldn't be loaded for this server.
+                    _state.update {
+                        it.copy(
+                            error = "Couldn't switch servers — the saved credentials for this server are missing or couldn't be read.",
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(error = e.message ?: "Couldn't switch servers.")
+                }
+            } finally {
+                // Always clear the flag. Without finally, an exception or cancellation would
+                // leave isSwitching = true, and the early-return guard above would then make
+                // server-switching permanently impossible for this ViewModel instance.
+                _state.update { it.copy(isSwitching = false) }
             }
-            _state.update { it.copy(isSwitching = false) }
         }
     }
 
-    fun consumeSwitchEvent() {
-        _switchEvent.value = null
-    }
-
     fun deleteServer(serverId: Long) {
+        // Don't delete while a switch or another delete is in flight: all mutate the active
+        // connection and can fire conflicting one-shot navigation events (_loggedOutEvent vs
+        // _switchEvent), or send _loggedOutEvent twice on a double-tap of the active server.
+        // The UI also disables the buttons during a switch, but guard here too. isDeleting is
+        // set inside the launch (viewModelScope is Main.immediate, so it runs synchronously
+        // before this call returns) and cleared in finally, mirroring switchToServer.
+        if (_state.value.isSwitching || _state.value.isDeleting) return
         viewModelScope.launch {
-            settingsRepository.deleteServer(serverId)
+            _state.update { it.copy(isDeleting = true) }
+            try {
+                val wasActive = settingsRepository.deleteServer(serverId)
+                if (wasActive) {
+                    // The active connection was torn down, so the Server Connection / Server Info
+                    // cards are now showing a deleted server. Clear them for the transition frame,
+                    // then navigate back to login — there is no valid session to keep using and the
+                    // in-memory api client still points at the deleted server, so any fetch from
+                    // here would hit it.
+                    _state.update {
+                        it.copy(
+                            serverUrl = "",
+                            username = "",
+                            aboutInfo = null,
+                            users = emptyList(),
+                        )
+                    }
+                    _loggedOutEvent.send(Unit)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Surface the failure instead of silently swallowing it, so the user knows the
+                // server wasn't removed and can retry.
+                _state.update { it.copy(error = e.message ?: "Couldn't remove server.") }
+            } finally {
+                // Always clear the flag, even on exception/cancellation, or the guard above would
+                // make deletion permanently impossible for this ViewModel instance.
+                _state.update { it.copy(isDeleting = false) }
+            }
         }
     }
 }

@@ -22,7 +22,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 
@@ -61,22 +63,40 @@ class StreamsViewModel @Inject constructor(
                 _state.update { it.copy(favoriteNames = names.toSet()) }
             }
         }
+        // Load once when the ViewModel is created. The screen no longer refreshes on every
+        // RESUME, so returning via back-navigation reuses the already-loaded data.
+        refresh()
     }
+
+    // Serializes toggles so two rapid taps can't both read the same pre-update state and
+    // take the same branch (which, with idempotent DAO ops, would leave the favorite in the
+    // wrong final state — e.g. tap-twice nets to "favorited" instead of cancelling out).
+    private val favoriteMutex = Mutex()
 
     fun toggleFavorite(streamName: String) {
         viewModelScope.launch {
-            if (streamName in _state.value.favoriteNames) {
-                favoriteDao.deleteByName(streamName)
-                _snackbarEvent.send("Removed from favorites")
-            } else {
-                favoriteDao.insert(FavoriteStream(streamName = streamName))
-                _snackbarEvent.send("Added to favorites")
+            favoriteMutex.withLock {
+                // Decide from the committed DB state, not the async-mirrored favoriteNames.
+                if (favoriteDao.isFavoriteNow(streamName)) {
+                    favoriteDao.deleteByName(streamName)
+                    _snackbarEvent.send("Removed from favorites")
+                } else {
+                    favoriteDao.insert(FavoriteStream(streamName = streamName))
+                    _snackbarEvent.send("Added to favorites")
+                }
             }
         }
     }
 
+    private var refreshJob: Job? = null
+
     fun refresh() {
-        viewModelScope.launch {
+        // Cancel any in-flight refresh so out-of-order completions can't overwrite a newer
+        // result with a stale one (the init load and a pull-to-refresh, or two quick pulls,
+        // can otherwise race and leave the older stream list showing). Mirrors the refreshJob
+        // guard in LogViewerViewModel.
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
             try {
@@ -93,9 +113,14 @@ class StreamsViewModel @Inject constructor(
 
                 when (streamsResult) {
                     is ApiResult.Success -> {
+                        // Prune cached stats/failures for streams that no longer exist so
+                        // deleted or recreated streams don't show stale numbers.
+                        val names = streamsResult.data.mapTo(HashSet()) { it.name }
                         _state.update {
                             it.copy(
                                 streams = streamsResult.data.sortedBy { s -> s.name.lowercase() },
+                                streamStats = it.streamStats.filterKeys { name -> name in names },
+                                failedStats = it.failedStats.filterTo(mutableSetOf()) { name -> name in names },
                                 isLoading = false,
                             )
                         }
@@ -124,9 +149,14 @@ class StreamsViewModel @Inject constructor(
 
     private val statsSemaphore = Semaphore(8)
     private var statsJob: Job? = null
+    // Per-stream retry jobs, tracked so a new bulk refresh can cancel any in-flight
+    // retry — otherwise a late retry result could overwrite freshly-loaded stats.
+    private val retryJobs = mutableMapOf<String, Job>()
 
     private fun loadStreamStats(streams: List<LogStream>) {
         statsJob?.cancel()
+        retryJobs.values.forEach { it.cancel() }
+        retryJobs.clear()
         statsJob = viewModelScope.launch {
             streams.forEach { stream ->
                 launch {
@@ -139,11 +169,19 @@ class StreamsViewModel @Inject constructor(
     }
 
     fun retryStats(streamName: String) {
-        viewModelScope.launch {
+        retryJobs[streamName]?.cancel()
+        val job = viewModelScope.launch {
             _state.update { it.copy(failedStats = it.failedStats - streamName) }
             statsSemaphore.withPermit {
                 loadSingleStreamStats(streamName)
             }
+        }
+        retryJobs[streamName] = job
+        // Drop the entry once the retry finishes so the map doesn't accumulate completed
+        // jobs for the ViewModel's lifetime. Guard with an identity check so we never remove
+        // a newer retry that has since replaced this one for the same stream.
+        job.invokeOnCompletion {
+            if (retryJobs[streamName] === job) retryJobs.remove(streamName)
         }
     }
 
@@ -160,7 +198,10 @@ class StreamsViewModel @Inject constructor(
                         ?: formatBytes(stats.storage?.lifetimeSize),
                 )
                 _state.update {
-                    it.copy(
+                    // Drop late results for streams a concurrent refresh has already pruned,
+                    // so an in-flight retry can't resurrect stats for a deleted stream.
+                    if (it.streams.none { s -> s.name == streamName }) it
+                    else it.copy(
                         streamStats = it.streamStats + (streamName to ui),
                         failedStats = it.failedStats - streamName,
                     )
@@ -168,7 +209,8 @@ class StreamsViewModel @Inject constructor(
             }
             is ApiResult.Error -> {
                 _state.update {
-                    it.copy(failedStats = it.failedStats + streamName)
+                    if (it.streams.none { s -> s.name == streamName }) it
+                    else it.copy(failedStats = it.failedStats + streamName)
                 }
             }
         }

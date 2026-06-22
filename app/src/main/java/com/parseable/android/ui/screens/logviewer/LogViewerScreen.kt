@@ -101,6 +101,10 @@ fun LogViewerScreen(
                 actions = {
                     StreamingToggleButton(
                         isStreaming = state.isStreaming,
+                        // Live-tail re-derives its own default SELECT * query in the poller, so
+                        // it can't honor a custom SQL projection/filter. Disable the toggle while
+                        // a custom query is active to avoid prepending mismatched rows.
+                        enabled = state.customSql.isBlank(),
                         onClick = viewModel::toggleStreaming,
                     )
                     IconButton(onClick = { onStreamInfo(streamName) }) {
@@ -167,7 +171,9 @@ fun LogViewerScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     keyboardController?.hide()
-                    viewModel.refresh()
+                    // Runs the search now and cancels the pending debounce (which stops live-tail
+                    // and refreshes) so we don't fire a second, redundant refresh ~300ms later.
+                    viewModel.submitSearch()
                 }),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -281,9 +287,41 @@ fun LogViewerScreen(
             // Log entries
             PullToRefreshBox(
                 isRefreshing = state.isLoading,
-                onRefresh = viewModel::refresh,
+                onRefresh = viewModel::pullRefresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
+                // Hoisted above the error/loading/empty/list branches so the scroll position,
+                // the clipboard handle, and the viewing-top / load-more effects survive
+                // transitions through those states. If they lived inside the list `else` branch
+                // they would be disposed and recreated on every empty/loading/error transition,
+                // resetting scroll to the top and re-arming loadMore mid-load.
+                val listState = rememberLazyListState()
+                val clipboard = remember {
+                    context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                }
+
+                // Tell the ViewModel when the list is at the top so it can clear the live-tail
+                // "+N new" badge — new rows prepend at the top and are seen immediately there.
+                val atTop by remember {
+                    derivedStateOf {
+                        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                    }
+                }
+                LaunchedEffect(atTop) { viewModel.setViewingTop(atTop) }
+
+                // Auto-load more when scrolling near the bottom.
+                val shouldLoadMore by remember {
+                    derivedStateOf {
+                        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        lastVisible >= listState.layoutInfo.totalItemsCount - 5
+                    }
+                }
+                LaunchedEffect(shouldLoadMore, state.hasMore, state.isLoading) {
+                    if (shouldLoadMore && state.hasMore && !state.isLoading) {
+                        viewModel.loadMore()
+                    }
+                }
+
                 if (state.error != null && state.logs.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -350,24 +388,6 @@ fun LogViewerScreen(
                         }
                     }
                 } else {
-                    val listState = rememberLazyListState()
-                    val clipboard = remember {
-                        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    }
-
-                    // Auto-load more when scrolling near the bottom
-                    if (state.hasMore && !state.isLoading) {
-                        val shouldLoadMore by remember {
-                            derivedStateOf {
-                                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                                lastVisible >= listState.layoutInfo.totalItemsCount - 5
-                            }
-                        }
-                        LaunchedEffect(shouldLoadMore) {
-                            if (shouldLoadMore) viewModel.loadMore()
-                        }
-                    }
-
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(8.dp),
@@ -380,19 +400,24 @@ fun LogViewerScreen(
                             val key = state.logKeys.getOrElse(index) { "log_$index" }
                             LogEntryCard(
                                 logEntry = logEntry,
+                                stableKey = key,
                                 isExpanded = expandedLogKey == key,
                                 onClick = {
                                     if (expandedLogKey == key) {
                                         // Collapsing: if the top of the entry is scrolled
                                         // above the viewport, jump to it so the user sees
                                         // the collapsed card instead of a random position.
+                                        // Resolve the row by its stable key, not the captured
+                                        // index — live-tail prepends shift every row's index,
+                                        // so the closed-over index can point at the wrong row.
                                         val itemInfo = listState.layoutInfo.visibleItemsInfo
-                                            .firstOrNull { it.index == index }
+                                            .firstOrNull { it.key == key }
                                         val needsScroll = itemInfo == null || itemInfo.offset < 0
                                         expandedLogKey = null
                                         if (needsScroll) {
+                                            val target = state.logKeys.indexOf(key).takeIf { it >= 0 } ?: index
                                             scope.launch {
-                                                listState.animateScrollToItem(index)
+                                                listState.animateScrollToItem(target)
                                             }
                                         }
                                     } else {
@@ -509,10 +534,18 @@ fun LogViewerScreen(
                                     if (!dir.mkdirs() && !dir.isDirectory) {
                                         throw java.io.IOException("Failed to create shared_logs directory")
                                     }
-                                    // Clean up previous exports
-                                    dir.listFiles()?.forEach { old -> old.delete() }
+                                    // Clean up STALE exports only. A share chooser opened moments
+                                    // ago may still be reading a recent file via its FileProvider
+                                    // URI; deleting every file (as before) could pull one out from
+                                    // under an in-flight share. Keep anything written in the last
+                                    // hour and give each export a unique name so concurrent shares
+                                    // never collide.
+                                    val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
+                                    dir.listFiles()?.forEach { old ->
+                                        if (old.lastModified() < cutoff) old.delete()
+                                    }
                                     val safeFileName = streamName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                                    val file = java.io.File(dir, "logs_$safeFileName.json")
+                                    val file = java.io.File(dir, "logs_${safeFileName}_${System.currentTimeMillis()}.json")
                                     file.bufferedWriter().use { writer ->
                                         // Use compact JSON for large exports to reduce memory/file size
                                         val encoder = if (logs.size > 1000) Json else prettyJson
@@ -574,17 +607,18 @@ fun LogViewerScreen(
                         val start = dateRangePickerState.selectedStartDateMillis
                         val end = dateRangePickerState.selectedEndDateMillis
                         if (start != null && end != null) {
-                            // DateRangePicker returns midnight UTC for the selected date.
-                            // Adjust to cover the full end day in the user's local timezone:
-                            // Convert to local date, get end-of-day, convert back to UTC millis.
+                            // DateRangePicker returns midnight UTC for the selected date, so the
+                            // calendar date must be read back in UTC — reading it in the local zone
+                            // would roll west-of-UTC users to the previous day. Once we have the
+                            // tapped date, build the boundaries to cover the full day locally.
                             val localZone = java.time.ZoneId.systemDefault()
                             val endLocalDate = java.time.Instant.ofEpochMilli(end)
-                                .atZone(localZone).toLocalDate()
+                                .atZone(java.time.ZoneOffset.UTC).toLocalDate()
                             val endOfDayUtc = endLocalDate.plusDays(1)
                                 .atStartOfDay(localZone)
                                 .toInstant().toEpochMilli() - 1
                             val startLocalDate = java.time.Instant.ofEpochMilli(start)
-                                .atZone(localZone).toLocalDate()
+                                .atZone(java.time.ZoneOffset.UTC).toLocalDate()
                             val startUtc = startLocalDate
                                 .atStartOfDay(localZone)
                                 .toInstant().toEpochMilli()
@@ -667,9 +701,10 @@ private fun TimeRangeBar(
 @Composable
 private fun StreamingToggleButton(
     isStreaming: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, enabled = enabled || isStreaming) {
         if (isStreaming) {
             val infiniteTransition = rememberInfiniteTransition(label = "stream_pulse")
             val alpha by infiniteTransition.animateFloat(
@@ -700,6 +735,7 @@ private fun StreamingToggleButton(
 @Composable
 fun LogEntryCard(
     logEntry: JsonObject,
+    stableKey: String,
     isExpanded: Boolean,
     onClick: () -> Unit,
     onCopied: () -> Unit = {},
@@ -718,7 +754,9 @@ fun LogEntryCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Timestamp row
-            val rawTimestamp = remember(logEntry) {
+            // Key the derived values on the content-stable log key (not the JsonObject
+            // instance), so live-tail re-emissions of unchanged rows don't re-parse them.
+            val rawTimestamp = remember(stableKey) {
                 try {
                     logEntry["p_timestamp"]?.jsonPrimitive?.content
                         ?: logEntry["datetime"]?.jsonPrimitive?.content
@@ -743,7 +781,7 @@ fun LogEntryCard(
 
             if (!isExpanded) {
                 // Compact view: show first meaningful fields
-                val preview = remember(logEntry) {
+                val preview = remember(stableKey) {
                     logEntry.entries
                         .filter { !it.key.startsWith("p_") || it.key == "p_timestamp" }
                         .take(3)
@@ -858,6 +896,17 @@ fun FilterBottomSheet(
     onApplyFilter: (column: String, operator: String, value: String) -> Unit,
 ) {
     var selectedColumn by remember { mutableStateOf(columns.firstOrNull() ?: "") }
+    // The filter icon is always enabled, so the sheet can open before the schema (and thus
+    // `columns`) has loaded. In that case `selectedColumn` initializes to "" and — because the
+    // remember above isn't keyed on `columns` — would stay blank even after columns arrive,
+    // leaving the Column field empty and the Apply button permanently disabled. Backfill the
+    // default once columns are available, but only while the selection is still blank so a
+    // user's manual pick isn't clobbered by a late schema refresh.
+    LaunchedEffect(columns) {
+        if (selectedColumn.isBlank()) {
+            selectedColumn = columns.firstOrNull() ?: ""
+        }
+    }
     var selectedOperator by remember { mutableStateOf("=") }
     var filterValue by remember { mutableStateOf("") }
     var columnDropdownExpanded by remember { mutableStateOf(false) }

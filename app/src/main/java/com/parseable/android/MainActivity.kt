@@ -51,6 +51,17 @@ class MainActivity : ComponentActivity() {
                             repository.configure(savedConfig)
                         }
                         startDestination = if (savedConfig != null) Routes.STREAMS else Routes.LOGIN
+
+                        // Best-effort startup reconciliation for state a row-collapsing migration
+                        // (raw SQL) can't reach: re-link a dangling active_server_id to its
+                        // surviving row, then drop password entries orphaned by the collapse.
+                        // Runs after startDestination so it never blocks first paint.
+                        try {
+                            settingsRepository.reconcileActiveServerId()
+                            settingsRepository.cleanupOrphanedServerPasswords()
+                        } catch (_: Exception) {
+                            // Reconciliation/cleanup are non-critical; ignore failures.
+                        }
                     }
 
                     val dest = startDestination
@@ -61,8 +72,17 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(navController) {
                             repository.authErrors
                                 .onEach {
+                                    // Several parallel requests can each surface a 401 in quick
+                                    // succession. Skip re-navigating (and re-clearing) when we're
+                                    // already on the login screen, so a burst can't thrash the
+                                    // back stack or re-trigger the "session expired" message.
+                                    val onLogin = navController.currentDestination
+                                        ?.route?.startsWith(Routes.LOGIN) == true
+                                    if (onLogin) return@onEach
                                     settingsRepository.clearConfig()
-                                    errorHandler.showError("Session expired. Please log in again.")
+                                    // The login screen shows the "session expired" message
+                                    // itself via the sessionExpired flag; showing it here too
+                                    // would queue a duplicate snackbar.
                                     navController.navigate(Routes.login(sessionExpired = true)) {
                                         popUpTo(0) { inclusive = true }
                                     }

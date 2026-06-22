@@ -143,6 +143,9 @@ class StreamsViewModelTest {
     @Test
     fun `toggleFavorite removes when already favorited`() = runTest {
         every { favoriteDao.getAllNames() } returns flowOf(listOf("existing"))
+        // toggleFavorite decides insert-vs-delete from the committed DB state (isFavoriteNow),
+        // not the async-mirrored favoriteNames flow, so stub that as the source of truth.
+        coEvery { favoriteDao.isFavoriteNow("existing") } returns true
 
         viewModel = StreamsViewModel(repository, settingsRepository, favoriteDao)
         viewModel.toggleFavorite("existing")

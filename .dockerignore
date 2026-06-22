@@ -1,0 +1,15 @@
+# Keep the build context small, but DO keep .git — build.gradle.kts derives the
+# app version from `git log -1`, so the repository history must be present.
+build/
+app/build/
+.gradle/
+*.iml
+.idea/
+.DS_Store
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.keystore
+*.jks
+.jj/

@@ -27,15 +27,20 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onAboutClick: () -> Unit,
     onServerSwitched: () -> Unit,
+    onLoggedOut: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val switchEvent by viewModel.switchEvent.collectAsStateWithLifecycle()
 
-    LaunchedEffect(switchEvent) {
-        if (switchEvent != null) {
-            viewModel.consumeSwitchEvent()
+    LaunchedEffect(Unit) {
+        viewModel.switchEvent.collect {
             onServerSwitched()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.loggedOutEvent.collect {
+            onLoggedOut()
         }
     }
 
@@ -102,8 +107,10 @@ fun SettingsScreen(
                     )
                 }
 
-                // Loading indicator for server data
-                if (state.isLoading) {
+                // Loading indicator for server data — only on the initial load. During a
+                // pull-to-refresh the PullToRefreshBox already shows its own spinner and
+                // aboutInfo is still populated, so gating on isLoading alone double-spins.
+                if (state.isLoading && state.aboutInfo == null) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()

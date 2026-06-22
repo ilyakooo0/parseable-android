@@ -33,6 +33,20 @@ class FormatTimestampTest {
     }
 
     @Test
+    fun `treats offset-less timestamp as UTC and converts to local`() {
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+            // No offset/zone: should be interpreted as UTC (Parseable stores UTC),
+            // then converted to local (June = EDT = UTC-4).
+            val result = formatTimestamp("2024-06-15T18:30:45.000")
+            assertEquals("Jun 15 14:30:45.000", result)
+        } finally {
+            TimeZone.setDefault(original)
+        }
+    }
+
+    @Test
     fun `returns raw string for unparseable timestamp`() {
         val result = formatTimestamp("not-a-timestamp")
         assertEquals("not-a-timestamp", result)

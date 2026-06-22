@@ -12,10 +12,14 @@ interface FavoriteStreamDao {
     @Query("SELECT * FROM favorite_streams ORDER BY addedAt DESC")
     fun getAll(): Flow<List<FavoriteStream>>
 
+    // Ordered most-recently-favorited first so the UI can show favorites in recency order
+    // (toSet() downstream preserves this iteration order via LinkedHashSet).
     @Query("SELECT streamName FROM favorite_streams ORDER BY addedAt DESC")
     fun getAllNames(): Flow<List<String>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // IGNORE (not REPLACE): re-favoriting an existing stream must keep its original
+    // addedAt so the getAll() "ORDER BY addedAt DESC" ordering stays stable.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(favorite: FavoriteStream)
 
     @Delete
@@ -26,4 +30,10 @@ interface FavoriteStreamDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorite_streams WHERE streamName = :name)")
     fun isFavorite(name: String): Flow<Boolean>
+
+    // One-shot suspend variant. toggleFavorite() must decide insert-vs-delete from the
+    // committed DB state rather than the async-mirrored UI state, so rapid double-taps
+    // can't both observe a stale value and take the same branch.
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_streams WHERE streamName = :name)")
+    suspend fun isFavoriteNow(name: String): Boolean
 }

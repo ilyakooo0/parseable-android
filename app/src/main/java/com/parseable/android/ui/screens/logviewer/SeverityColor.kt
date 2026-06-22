@@ -65,8 +65,7 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
     trimmed.toIntOrNull()?.let { num ->
         return when {
             // Syslog severity (0 = emergency .. 7 = debug)
-            fieldName.equals("syslog_severity", ignoreCase = true) ||
-                fieldName.equals("priority", ignoreCase = true) -> when (num) {
+            fieldName.equals("syslog_severity", ignoreCase = true) -> when (num) {
                 0, 1, 2 -> LogSeverity.FATAL   // emergency, alert, critical
                 3 -> LogSeverity.ERROR
                 4 -> LogSeverity.WARNING
@@ -75,20 +74,50 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
                 7 -> LogSeverity.DEBUG
                 else -> LogSeverity.UNKNOWN
             }
-            // HTTP status codes
-            fieldName.equals("status", ignoreCase = true) -> when {
-                num >= 500 -> LogSeverity.ERROR
-                num >= 400 -> LogSeverity.WARNING
-                num in 200..399 -> LogSeverity.INFO
+            // Syslog "priority" (PRI) is the encoded value facility*8 + severity (0..191), so the
+            // severity is the low 3 bits. For a bare 0..7 this is identity; a real PRI like 134
+            // decodes to severity 6 (info) instead of falling through to UNKNOWN.
+            fieldName.equals("priority", ignoreCase = true) -> when {
+                num < 0 || num > 191 -> LogSeverity.UNKNOWN
+                else -> when (num % 8) {
+                    0, 1, 2 -> LogSeverity.FATAL   // emergency, alert, critical
+                    3 -> LogSeverity.ERROR
+                    4 -> LogSeverity.WARNING
+                    5, 6 -> LogSeverity.INFO        // notice, informational
+                    else -> LogSeverity.DEBUG       // 7
+                }
+            }
+            // HTTP status codes. Bound every branch to the valid HTTP range (100..599):
+            // `status` is a very generic field name, so an unbounded `>= 500`/`>= 400`
+            // would mis-color non-HTTP values (e.g. status: 50000) as ERROR/WARNING.
+            fieldName.equals("status", ignoreCase = true) -> when (num) {
+                in 500..599 -> LogSeverity.ERROR
+                in 400..499 -> LogSeverity.WARNING
+                // 1xx (informational) through 3xx are non-error HTTP statuses; 1xx previously
+                // fell through to UNKNOWN.
+                in 100..399 -> LogSeverity.INFO
                 else -> LogSeverity.UNKNOWN
             }
-            // Generic numeric (Java util logging style: higher = more severe)
+            // Generic numeric (higher = more severe). Two scales coexist under a bare numeric
+            // "level"/"severity" field, so handle both:
+            //  • Large-magnitude java.util.logging (FINEST=300 … SEVERE=1000).
+            //  • Small-integer structured JSON loggers (e.g. Bunyan: trace=10 … fatal=60).
+            // Without the small-integer arm, Bunyan-style levels (10..60) would all fall into the
+            // `num > 0 -> TRACE` catch-all and every such log would render as TRACE. The >= 100
+            // boundary keeps every existing java.util.logging mapping unchanged (100..399 stayed
+            // TRACE before and still does).
             else -> when {
                 num >= 1000 -> LogSeverity.FATAL
                 num >= 900 -> LogSeverity.ERROR
                 num >= 800 -> LogSeverity.WARNING
                 num >= 700 -> LogSeverity.INFO
                 num >= 400 -> LogSeverity.DEBUG
+                num >= 100 -> LogSeverity.TRACE
+                num >= 60 -> LogSeverity.FATAL
+                num >= 50 -> LogSeverity.ERROR
+                num >= 40 -> LogSeverity.WARNING
+                num >= 30 -> LogSeverity.INFO
+                num >= 20 -> LogSeverity.DEBUG
                 num > 0 -> LogSeverity.TRACE
                 else -> LogSeverity.UNKNOWN
             }

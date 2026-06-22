@@ -2,7 +2,10 @@ package com.parseable.android.data
 
 import java.util.Locale
 
-private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
+// "EB" is included so PB is never the last unit: the promotion guard below (which only fires
+// when a higher unit exists) then handles a PB value in [1023.5, 1024) — promoting it to "1.00 EB"
+// instead of rendering "1024 PB". The remaining unhandled top-unit case sits at ~1.2e24 bytes.
+private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB", "EB")
 
 /**
  * Converts a raw byte-count string (e.g. "123456789") to a human-readable
@@ -12,11 +15,25 @@ private val BYTE_UNITS = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
 fun formatBytes(raw: String?): String? {
     if (raw == null) return null
     val bytes = raw.trim().toDoubleOrNull() ?: return raw
+    // toDoubleOrNull accepts "NaN"/"Infinity"; those slip past the range guards below and
+    // would format as "NaN B" / "Infinity PB". Pass them through unchanged instead.
+    if (!bytes.isFinite()) return raw
     if (bytes < 0) return raw
-    if (bytes < 1024) return String.format(Locale.US, "%.0f B", bytes)
+    // Use 1023.5, not 1024, as the cutoff: "%.0f" rounds half-up, so a byte count in
+    // [1023.5, 1024) would render as "1024 B" — a value that should promote to "1.00 KB".
+    // Such inputs fall through to the unit-scaling path, where the promotion guard below
+    // (value >= 1023.5) handles them.
+    if (bytes < 1023.5) return String.format(Locale.US, "%.0f B", bytes)
     var value = bytes
     var unitIndex = 0
     while (value >= 1024 && unitIndex < BYTE_UNITS.size - 1) {
+        value /= 1024
+        unitIndex++
+    }
+    // A value just under 1024 (e.g. 1023.999 KB) is formatted with "%.0f", which rounds it to
+    // "1024 KB" — a unit that should never display. Promote to the next unit so it renders as
+    // "1.00 MB". The "%.1f"/"%.2f" branches operate far below 1024, so only this case crosses.
+    if (value >= 1023.5 && unitIndex < BYTE_UNITS.size - 1) {
         value /= 1024
         unitIndex++
     }

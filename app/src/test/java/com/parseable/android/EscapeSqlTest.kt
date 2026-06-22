@@ -1,6 +1,7 @@
 package com.parseable.android
 
 import com.parseable.android.data.escapeIdentifier
+import com.parseable.android.data.escapeLikePattern
 import com.parseable.android.data.escapeSql
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -50,6 +51,32 @@ class EscapeSqlTest {
     @Test
     fun `escapeSql handles quote injection attempt`() {
         assertEquals("''; DROP TABLE users --", escapeSql("'; DROP TABLE users --"))
+    }
+
+    @Test
+    fun `escapeLikePattern escapes percent wildcard`() {
+        assertEquals("100\\%", escapeLikePattern("100%"))
+    }
+
+    @Test
+    fun `escapeLikePattern escapes underscore wildcard`() {
+        assertEquals("a\\_b", escapeLikePattern("a_b"))
+    }
+
+    @Test
+    fun `escapeLikePattern escapes backslash before wildcards`() {
+        // Input backslash becomes a doubled backslash; %/_ each gain one escape.
+        assertEquals("\\\\\\%\\_", escapeLikePattern("\\%_"))
+    }
+
+    @Test
+    fun `escapeLikePattern also escapes single quotes`() {
+        assertEquals("it''s 50\\%", escapeLikePattern("it's 50%"))
+    }
+
+    @Test
+    fun `escapeLikePattern leaves plain text untouched`() {
+        assertEquals("hello world", escapeLikePattern("hello world"))
     }
 
     @Test

@@ -40,8 +40,8 @@ fun LoginScreen(
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     val errorHandler = LocalErrorHandler.current
 
-    LaunchedEffect(state.loginSuccess) {
-        if (state.loginSuccess) {
+    LaunchedEffect(Unit) {
+        viewModel.loginSuccessEvent.collect {
             onLoginSuccess()
         }
     }
@@ -178,12 +178,7 @@ fun LoginScreen(
 
             if (state.allowInsecure) {
                 val isPrivateNetwork = remember(state.serverUrl) {
-                    val host = state.serverUrl
-                        .removePrefix("http://").removePrefix("https://")
-                        .substringBefore("/").substringBefore(":")
-                    host.isBlank() || host == "localhost" || host.startsWith("127.") ||
-                        host.startsWith("10.") || host.startsWith("192.168.") ||
-                        host.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\..*"))
+                    isPrivateHost(extractHost(state.serverUrl))
                 }
                 if (!isPrivateNetwork) {
                     Card(
@@ -254,4 +249,56 @@ fun LoginScreen(
             }
         }
     }
+}
+
+/**
+ * Extract the bare host from a possibly-schemeless, possibly-ported URL, handling
+ * IPv6 literals (`[::1]:8000`) and bare IPv6 addresses correctly.
+ */
+internal fun extractHost(url: String): String {
+    // Drop the scheme if present, then the path.
+    var hostPort = url.substringAfter("://").substringBefore("/")
+    return if (hostPort.startsWith("[")) {
+        // Bracketed IPv6 literal, e.g. "[::1]:8000" -> "::1"
+        hostPort.substringAfter("[").substringBefore("]")
+    } else {
+        // Strip ":port" only when there's a single colon (host:port). A bare IPv6
+        // address has multiple colons and no brackets, so leave it intact.
+        if (hostPort.count { it == ':' } == 1) hostPort.substringBefore(":") else hostPort
+    }
+}
+
+/**
+ * Whether [host] is a loopback/private-range address. Used to decide whether the
+ * plaintext-HTTP warning is needed. Matches actual IPv4 octet ranges (not string
+ * prefixes, so "10.example.com" is correctly treated as public) and IPv6
+ * loopback/link-local/unique-local addresses.
+ */
+internal fun isPrivateHost(host: String): Boolean {
+    if (host.isBlank()) return true
+    val h = host.lowercase()
+    if (h == "localhost" || h.endsWith(".localhost")) return true
+
+    // IPv6 ranges (only meaningful for actual IPv6 literals, which contain ':').
+    if (h.contains(":")) {
+        if (h == "::1") return true // loopback
+        if (h.startsWith("fe80:")) return true // link-local fe80::/10
+        if (h.startsWith("fc") || h.startsWith("fd")) return true // unique-local fc00::/7
+        return false
+    }
+
+    // IPv4: require four numeric octets in 0..255, then match private ranges.
+    val octets = h.split(".")
+    if (octets.size == 4 && octets.all { val n = it.toIntOrNull(); n != null && n in 0..255 }) {
+        val a = octets[0].toInt()
+        val b = octets[1].toInt()
+        return when {
+            a == 10 -> true            // 10.0.0.0/8
+            a == 127 -> true           // loopback 127.0.0.0/8
+            a == 192 && b == 168 -> true // 192.168.0.0/16
+            a == 172 && b in 16..31 -> true // 172.16.0.0/12
+            else -> false
+        }
+    }
+    return false
 }

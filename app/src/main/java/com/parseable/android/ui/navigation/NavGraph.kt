@@ -16,7 +16,6 @@ import com.parseable.android.ui.screens.logviewer.StreamInfoScreen
 import com.parseable.android.ui.screens.about.AboutScreen
 import com.parseable.android.ui.screens.settings.SettingsScreen
 import com.parseable.android.ui.screens.streams.StreamsScreen
-import java.net.URLDecoder
 import java.net.URLEncoder
 
 object Routes {
@@ -31,9 +30,16 @@ object Routes {
     fun login(sessionExpired: Boolean = false) =
         if (sessionExpired) "login?sessionExpired=true" else LOGIN
     fun logViewer(streamName: String) =
-        "log_viewer/${URLEncoder.encode(streamName, "UTF-8")}"
+        "log_viewer/${encodeArg(streamName)}"
     fun streamInfo(streamName: String) =
-        "stream_info/${URLEncoder.encode(streamName, "UTF-8")}"
+        "stream_info/${encodeArg(streamName)}"
+
+    // URLEncoder maps space to "+", but Navigation decodes captured path args with Uri.decode,
+    // which only understands "%20" and leaves "+" untouched (it would survive as a literal
+    // "+"). Normalize to "%20" so the name Navigation hands back matches the original. Do NOT
+    // decode again at the call site — Navigation already does that one decode for us.
+    private fun encodeArg(value: String) =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 }
 
 @Composable
@@ -114,9 +120,8 @@ fun ParseableNavGraph(
                 }
                 return@composable
             }
-            val streamName = URLDecoder.decode(
-                backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
-            )
+            // Navigation already URI-decodes captured path args, so use the value as-is.
+            val streamName = backStackEntry.arguments?.getString("streamName") ?: ""
             LogViewerScreen(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },
@@ -132,14 +137,22 @@ fun ParseableNavGraph(
             route = Routes.STREAM_INFO,
             arguments = listOf(navArgument("streamName") { type = NavType.StringType }),
         ) { backStackEntry ->
-            val streamName = URLDecoder.decode(
-                backStackEntry.arguments?.getString("streamName") ?: "", "UTF-8"
-            )
+            // Navigation already URI-decodes captured path args, so use the value as-is.
+            val streamName = backStackEntry.arguments?.getString("streamName") ?: ""
             StreamInfoScreen(
                 streamName = streamName,
                 onBack = { navController.popBackStack() },
                 onStreamDeleted = {
-                    navController.popBackStack(Routes.STREAMS, inclusive = false)
+                    // popBackStack no-ops (returns false) when there's no streams entry on
+                    // the back stack — e.g. when the user arrived via the deep link. In that
+                    // case navigate to streams fresh so we don't strand them on the info
+                    // screen for a now-deleted stream.
+                    val popped = navController.popBackStack(Routes.STREAMS, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(Routes.STREAMS) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
                 },
             )
         }
@@ -179,6 +192,11 @@ fun ParseableNavGraph(
                 },
                 onServerSwitched = {
                     navController.navigate(Routes.STREAMS) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onLoggedOut = {
+                    navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
                     }
                 },

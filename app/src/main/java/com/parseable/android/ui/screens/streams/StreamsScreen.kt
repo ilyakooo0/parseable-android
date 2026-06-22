@@ -10,15 +10,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -34,16 +32,21 @@ fun StreamsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showLogoutConfirmation by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val listState = rememberLazyListState()
 
-    // Scroll to top when a refresh completes (isLoading transitions to false)
+    // Scroll to top only when a refresh actually completes (isLoading transitions true -> false
+    // while composed). Keying solely on isLoading also fired on return-to-screen and on the
+    // initial composition, yanking the list to the top and discarding the user's restored
+    // scroll position. Tracking the previous value limits the jump to genuine refresh events.
+    var wasLoading by remember { mutableStateOf(false) }
     LaunchedEffect(state.isLoading) {
-        if (!state.isLoading) {
+        if (wasLoading && !state.isLoading) {
             listState.scrollToItem(0)
         }
+        wasLoading = state.isLoading
     }
 
     val filteredStreams = remember(state.streams, searchQuery, state.favoriteNames) {
@@ -55,14 +58,11 @@ fun StreamsScreen(
         }
         // Partition by favorites instead of full sort for O(n) vs O(n log n)
         val (favs, rest) = filtered.partition { it.name in favorites }
-        favs + rest
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.refresh()
-        }
+        // `favorites` iterates most-recently-favorited first (DAO ORDER BY addedAt DESC
+        // preserved through LinkedHashSet); order favs to match so recency is reflected.
+        val favRank = favorites.withIndex().associate { (i, name) -> name to i }
+        val sortedFavs = favs.sortedBy { favRank[it.name] ?: Int.MAX_VALUE }
+        sortedFavs + rest
     }
 
     LaunchedEffect(Unit) {
@@ -157,7 +157,12 @@ fun StreamsScreen(
                 }
             } else {
                 Column {
-                    if (state.streams.size > 5) {
+                    // Keep the search field visible whenever a query is active, even if the
+                    // total stream count has since dropped to <=5 (e.g. after a refresh or a
+                    // server-side deletion). Otherwise the field would vanish while the stale
+                    // query keeps filtering `filteredStreams`, stranding the user with no way
+                    // to clear it.
+                    if (state.streams.size > 5 || searchQuery.isNotEmpty()) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },

@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,10 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import com.parseable.android.data.formatBytes
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -35,11 +33,10 @@ fun StreamInfoScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(streamName, lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.load(streamName)
-        }
+    // Load once per stream. Reloading on every RESUME would refetch all four endpoints on
+    // each return and could re-query a stream that was just deleted (spurious error card).
+    LaunchedEffect(streamName) {
+        viewModel.load(streamName)
     }
 
     LaunchedEffect(state.deleteSuccess) {
@@ -73,97 +70,114 @@ fun StreamInfoScreen(
             )
         },
     ) { padding ->
-        if (state.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // Stats section
-                state.stats?.let { stats ->
-                    InfoSection(title = "Statistics") {
-                        InfoRow("Event Count", stats.ingestion?.count?.toString() ?: stats.ingestion?.lifetimeCount?.toString() ?: "N/A")
-                        InfoRow("Ingestion Size", formatBytes(stats.ingestion?.size) ?: formatBytes(stats.ingestion?.lifetimeSize) ?: "N/A")
-                        InfoRow("Storage Size", formatBytes(stats.storage?.size) ?: formatBytes(stats.storage?.lifetimeSize) ?: "N/A")
-                        if (stats.ingestion?.lifetimeCount != null) {
-                            InfoRow("Lifetime Events", stats.ingestion.lifetimeCount.toString())
-                        }
-                        if (stats.ingestion?.deletedCount != null) {
-                            InfoRow("Deleted Events", stats.ingestion.deletedCount.toString())
-                        }
-                    }
+        // Has any section loaded yet? Drives whether a load shows the centered first-load
+        // spinner or keeps existing content visible (so pull-to-refresh stays usable on retry).
+        val hasContent = state.stats != null || state.schema.isNotEmpty() ||
+            state.rawInfo != null || state.retention.isNotEmpty() || state.schemaFailed
+        PullToRefreshBox(
+            // Only show the pull indicator when refreshing over existing content; the very
+            // first load uses the centered spinner below, so don't show both at once.
+            isRefreshing = state.isLoading && hasContent,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            if (state.isLoading && !hasContent) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
                 }
-
-                // Schema section
-                if (state.schema.isNotEmpty()) {
-                    InfoSection(title = "Schema (${state.schema.size} fields)") {
-                        state.schema.forEach { field ->
-                            InfoRow(
-                                field.name,
-                                field.dataType?.toString()?.trim('"') ?: "Unknown",
-                            )
-                        }
-                    }
-                } else if (state.schemaFailed) {
-                    InfoSection(title = "Schema") {
-                        Text(
-                            text = "Schema unavailable",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                // Retention section
-                if (state.retention.isNotEmpty()) {
-                    InfoSection(title = "Retention") {
-                        state.retention.forEach { r ->
-                            InfoRow("Duration", r.duration ?: "N/A")
-                            InfoRow("Action", r.action ?: "N/A")
-                            if (r.description != null) {
-                                InfoRow("Description", r.description)
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    // Stats section
+                    state.stats?.let { stats ->
+                        InfoSection(title = "Statistics") {
+                            // Show the current-window count when available. Fall back to "N/A"
+                            // only when there's no lifetime count either — otherwise the lifetime
+                            // figure is shown in its own row below, so don't duplicate it here.
+                            when {
+                                stats.ingestion?.count != null -> InfoRow("Event Count", stats.ingestion.count.toString())
+                                stats.ingestion?.lifetimeCount == null -> InfoRow("Event Count", "N/A")
+                            }
+                            InfoRow("Ingestion Size", formatBytes(stats.ingestion?.size) ?: formatBytes(stats.ingestion?.lifetimeSize) ?: "N/A")
+                            InfoRow("Storage Size", formatBytes(stats.storage?.size) ?: formatBytes(stats.storage?.lifetimeSize) ?: "N/A")
+                            if (stats.ingestion?.lifetimeCount != null) {
+                                InfoRow("Lifetime Events", stats.ingestion.lifetimeCount.toString())
+                            }
+                            if (stats.ingestion?.deletedCount != null) {
+                                InfoRow("Deleted Events", stats.ingestion.deletedCount.toString())
                             }
                         }
                     }
-                }
 
-                // Raw info section
-                state.rawInfo?.let { rawInfo ->
-                    val prettyInfo = remember(rawInfo) {
-                        prettyJson.encodeToString(JsonObject.serializer(), rawInfo)
+                    // Schema section
+                    if (state.schema.isNotEmpty()) {
+                        InfoSection(title = "Schema (${state.schema.size} fields)") {
+                            state.schema.forEach { field ->
+                                InfoRow(
+                                    field.name,
+                                    field.dataType?.toString()?.trim('"') ?: "Unknown",
+                                )
+                            }
+                        }
+                    } else if (state.schemaFailed) {
+                        InfoSection(title = "Schema") {
+                            Text(
+                                text = "Schema unavailable",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                    InfoSection(title = "Stream Info") {
-                        Text(
-                            text = prettyInfo,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                    }
-                }
 
-                state.error?.let { errorText ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                    ) {
-                        Text(
-                            text = errorText,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
+                    // Retention section
+                    if (state.retention.isNotEmpty()) {
+                        InfoSection(title = "Retention") {
+                            state.retention.forEach { r ->
+                                InfoRow("Duration", r.duration ?: "N/A")
+                                InfoRow("Action", r.action ?: "N/A")
+                                if (r.description != null) {
+                                    InfoRow("Description", r.description)
+                                }
+                            }
+                        }
+                    }
+
+                    // Raw info section
+                    state.rawInfo?.let { rawInfo ->
+                        val prettyInfo = remember(rawInfo) {
+                            prettyJson.encodeToString(JsonObject.serializer(), rawInfo)
+                        }
+                        InfoSection(title = "Stream Info") {
+                            Text(
+                                text = prettyInfo,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
+
+                    state.error?.let { errorText ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                            ),
+                        ) {
+                            Text(
+                                text = errorText,
+                                modifier = Modifier.padding(16.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     }
                 }
             }

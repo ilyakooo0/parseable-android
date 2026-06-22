@@ -107,31 +107,35 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `load sets error when users fail`() = runTest {
+    fun `load ignores users failure when about succeeds`() = runTest {
         coEvery { settingsRepository.serverConfig } returns flowOf(null)
-        coEvery { repository.getAbout() } returns ApiResult.Success(AboutInfo())
+        coEvery { repository.getAbout() } returns ApiResult.Success(AboutInfo(version = "1.2.0"))
         coEvery { repository.listUsers() } returns ApiResult.Error("Forbidden", 403)
 
         val viewModel = SettingsViewModel(settingsRepository, repository)
 
+        // The user list (/user) is secondary and is commonly forbidden for restricted accounts,
+        // so its failure must not surface a blocking error or hide otherwise-valid server info.
         val state = viewModel.state.value
-        assertNotNull(state.error)
+        assertNull(state.error)
+        assertEquals("1.2.0", state.aboutInfo?.version)
         assertTrue(state.users.isEmpty())
     }
 
     @Test
-    fun `load consolidates errors from both about and users`() = runTest {
+    fun `load surfaces only the about error, not the users error`() = runTest {
         coEvery { settingsRepository.serverConfig } returns flowOf(null)
         coEvery { repository.getAbout() } returns ApiResult.Error("Server error", 500)
         coEvery { repository.listUsers() } returns ApiResult.Error("Forbidden", 403)
 
         val viewModel = SettingsViewModel(settingsRepository, repository)
 
+        // Only the primary server-info call (/about) is treated as blocking; the secondary
+        // /user failure stays silent.
         val state = viewModel.state.value
         assertNotNull(state.error)
-        // Both error messages should be present
         assertTrue(state.error!!.contains("Server error"))
-        assertTrue(state.error!!.contains("Permission denied"))
+        assertFalse(state.error!!.contains("Permission denied"))
     }
 
     @Test

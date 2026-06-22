@@ -1,9 +1,43 @@
 package com.parseable.android.data.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+
+/**
+ * Deserializes a value that some Parseable builds return as a JSON string ("12345") and other
+ * builds return as a JSON number (12345) into a [String], so stats parsing doesn't fail outright
+ * on the numeric form. Applied to the size fields below, which are rendered via [formatBytes]
+ * (itself tolerant of both a raw byte count and a pre-formatted string).
+ */
+object FlexibleStringSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FlexibleString", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: String) = encoder.encodeString(value)
+
+    override fun deserialize(decoder: Decoder): String {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeString()
+        val element = jsonDecoder.decodeJsonElement()
+        // JsonNull is itself a JsonPrimitive whose .content is the literal string "null". For the
+        // nullable fields this serializer is applied to, the compiler-generated nullable wrapper
+        // already intercepts a JSON null before deserialize() runs, so this never fires today. The
+        // guard exists so that if this serializer is ever attached to a non-null field, a JSON null
+        // surfaces as "" (rendered as absent) rather than the misleading literal text "null".
+        if (element is JsonNull) return ""
+        return (element as? JsonPrimitive)?.content ?: element.toString()
+    }
+}
 
 /**
  * Server connection configuration stored in DataStore.
@@ -47,25 +81,31 @@ data class StreamStats(
 @Serializable
 data class IngestionStats(
     val count: Long? = null,
+    @Serializable(with = FlexibleStringSerializer::class)
     val size: String? = null,
     val format: String? = null,
     @SerialName("lifetime_count")
     val lifetimeCount: Long? = null,
     @SerialName("lifetime_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val lifetimeSize: String? = null,
     @SerialName("deleted_count")
     val deletedCount: Long? = null,
     @SerialName("deleted_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val deletedSize: String? = null,
 )
 
 @Serializable
 data class StorageStats(
+    @Serializable(with = FlexibleStringSerializer::class)
     val size: String? = null,
     val format: String? = null,
     @SerialName("lifetime_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val lifetimeSize: String? = null,
     @SerialName("deleted_size")
+    @Serializable(with = FlexibleStringSerializer::class)
     val deletedSize: String? = null,
 )
 
@@ -152,11 +192,14 @@ data class Alert(
     val datasets: List<String> = emptyList(),
 ) {
     /** Best-effort display name from either response format. */
-    val displayName: String get() = title ?: name ?: "Unnamed Alert"
+    val displayName: String
+        get() = title?.takeIf { it.isNotBlank() }
+            ?: name?.takeIf { it.isNotBlank() }
+            ?: "Unnamed Alert"
 
     /** Whether the alert is active, derived from either response format. */
     val isEnabled: Boolean get() = when {
-        state != null -> state != "Disabled"
+        state != null -> !state.equals("Disabled", ignoreCase = true)
         enabled != null -> enabled
         else -> true
     }
@@ -178,6 +221,8 @@ sealed class ApiResult<out T> {
         val isUnauthorized: Boolean get() = code == 401
         val isNotFound: Boolean get() = code == 404
         val isServerError: Boolean get() = code in 500..599
+        // Only genuine transport failures use code 0. A successful HTTP response whose body
+        // failed to parse carries PARSE_ERROR_CODE so it isn't mislabeled as a network error.
         val isNetworkError: Boolean get() = code == 0
 
         val userMessage: String get() = when {
@@ -194,5 +239,15 @@ sealed class ApiResult<out T> {
             }
             else -> message
         }
+    }
+
+    companion object {
+        /**
+         * Code used for client-side response-parsing failures: the HTTP request succeeded
+         * but the body was malformed/unexpected. Distinct from 0 (network/transport failure)
+         * so [Error.isNetworkError] and [Error.userMessage] don't show a misleading
+         * "Network error" for what is actually a server-data problem.
+         */
+        const val PARSE_ERROR_CODE = -1
     }
 }

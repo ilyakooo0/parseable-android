@@ -24,6 +24,10 @@ class AlertsViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         repository = mockk(relaxed = true)
+        // The ViewModel loads once in init { refresh() }. Give that load a deterministic
+        // empty-success default so the initial state is clean; tests that exercise refresh
+        // override this stub and call refresh() again.
+        coEvery { repository.listAlerts() } returns ApiResult.Success(emptyList())
         viewModel = AlertsViewModel(repository)
     }
 

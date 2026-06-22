@@ -6,6 +6,7 @@ import com.parseable.android.data.model.Alert
 import com.parseable.android.data.model.ApiResult
 import com.parseable.android.data.repository.ParseableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,19 +29,40 @@ class AlertsViewModel @Inject constructor(
     private val _state = MutableStateFlow(AlertsState())
     val state: StateFlow<AlertsState> = _state.asStateFlow()
 
+    private var refreshJob: Job? = null
+
+    init {
+        // Load once on creation; the screen no longer refreshes on every RESUME.
+        refresh()
+    }
+
     fun refresh() {
-        viewModelScope.launch {
+        // Cancel any in-flight load so out-of-order completions can't overwrite a newer alert
+        // list with a stale one (init load, pull-to-refresh and deleteAlert->refresh can overlap).
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
-            when (val result = repository.listAlerts()) {
-                is ApiResult.Success -> {
-                    val sorted = result.data.sortedBy { a ->
-                        (a.name ?: a.title ?: "").lowercase()
-                    }
-                    _state.update { it.copy(alerts = sorted, isLoading = false) }
-                }
-                is ApiResult.Error -> {
-                    _state.update { it.copy(isLoading = false, error = result.userMessage) }
-                }
+            loadAlerts()
+        }
+    }
+
+    /**
+     * Fetches the alert list and writes a terminal state update (clearing isLoading). Callers set
+     * isLoading = true before invoking. Extracted so deleteAlert can reload within its own
+     * (never-cancelled) job rather than delegating to refresh(), whose refreshJob can be cancelled
+     * by a concurrent refresh before it clears the spinner.
+     */
+    private suspend fun loadAlerts() {
+        when (val result = repository.listAlerts()) {
+            is ApiResult.Success -> {
+                // Sort by the same field the UI shows (displayName = title ?: name), otherwise
+                // alerts that carry both fields, or a mix of per-stream and global formats,
+                // render in an order that doesn't match their visible labels.
+                val sorted = result.data.sortedBy { it.displayName.lowercase() }
+                _state.update { it.copy(alerts = sorted, isLoading = false) }
+            }
+            is ApiResult.Error -> {
+                _state.update { it.copy(isLoading = false, error = result.userMessage) }
             }
         }
     }
@@ -53,11 +75,19 @@ class AlertsViewModel @Inject constructor(
         _state.update { it.copy(alertToDelete = null) }
     }
 
+    private var deleteJob: Job? = null
+
     fun deleteAlert(alertId: String) {
-        viewModelScope.launch {
+        // Guard against a double-tap on the confirm button firing two concurrent DELETEs.
+        if (deleteJob?.isActive == true) return
+        deleteJob = viewModelScope.launch {
             _state.update { it.copy(alertToDelete = null, isLoading = true, error = null) }
             when (val result = repository.deleteAlert(alertId)) {
-                is ApiResult.Success -> refresh()
+                // Reload inline rather than via refresh(): refresh() runs on the cancellable
+                // refreshJob, so a pull-to-refresh landing right after could cancel it before it
+                // clears isLoading, leaving the spinner stuck. This job is never cancelled by a
+                // refresh, so its terminal state update always runs.
+                is ApiResult.Success -> loadAlerts()
                 is ApiResult.Error -> {
                     _state.update { it.copy(isLoading = false, error = result.userMessage) }
                 }

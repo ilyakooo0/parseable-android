@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,21 +39,61 @@ class StreamInfoViewModel @Inject constructor(
     val state: StateFlow<StreamInfoState> = _state.asStateFlow()
     private var loadJob: Job? = null
 
+    /** Holds the four parallel load results so coroutineScope can return them with their types intact. */
+    private data class LoadResults(
+        val stats: ApiResult<StreamStats>,
+        val schema: ApiResult<StreamSchema>,
+        val retention: ApiResult<List<RetentionConfig>>,
+        val info: ApiResult<JsonObject>,
+    )
+
     fun load(streamName: String) {
+        // Already showing (or loading) this stream — don't cancel and refetch all four
+        // endpoints on recomposition / config change. Matches LogViewerViewModel.initialize's
+        // guard; the screen loads once per stream (see StreamInfoScreen's LaunchedEffect).
+        if (_state.value.streamName == streamName) return
+        fetch(streamName)
+    }
+
+    /**
+     * Re-fetch the currently-shown stream, bypassing load()'s identity guard. Wired to
+     * pull-to-refresh so the user can retry after a transient endpoint failure (e.g. a failed
+     * schema fetch or a delete that errored) without leaving and re-entering the screen.
+     */
+    fun refresh() {
+        val name = _state.value.streamName
+        if (name.isEmpty()) return
+        fetch(name)
+    }
+
+    private fun fetch(streamName: String) {
         loadJob?.cancel()
         _state.update { it.copy(streamName = streamName, isLoading = true, error = null) }
 
         loadJob = viewModelScope.launch {
             try {
-                val statsDeferred = async { repository.getStreamStats(streamName) }
-                val schemaDeferred = async { repository.getStreamSchema(streamName) }
-                val retentionDeferred = async { repository.getStreamRetention(streamName) }
-                val infoDeferred = async { repository.getStreamInfo(streamName) }
+                // Wrap the parallel fetches in coroutineScope so the four async children
+                // form their own structured-concurrency scope (matching StreamsViewModel /
+                // SettingsViewModel). The repository returns ApiResult.Error rather than
+                // throwing, but if any call did throw unexpectedly this keeps the failure
+                // contained to this load instead of it propagating oddly through the launch.
+                val results = coroutineScope {
+                    val statsDeferred = async { repository.getStreamStats(streamName) }
+                    val schemaDeferred = async { repository.getStreamSchema(streamName) }
+                    val retentionDeferred = async { repository.getStreamRetention(streamName) }
+                    val infoDeferred = async { repository.getStreamInfo(streamName) }
 
-                val statsResult = statsDeferred.await()
-                val schemaResult = schemaDeferred.await()
-                val retentionResult = retentionDeferred.await()
-                val infoResult = infoDeferred.await()
+                    LoadResults(
+                        stats = statsDeferred.await(),
+                        schema = schemaDeferred.await(),
+                        retention = retentionDeferred.await(),
+                        info = infoDeferred.await(),
+                    )
+                }
+                val statsResult = results.stats
+                val schemaResult = results.schema
+                val retentionResult = results.retention
+                val infoResult = results.info
 
                 _state.update {
                     it.copy(
@@ -86,9 +127,17 @@ class StreamInfoViewModel @Inject constructor(
 
     fun deleteStream() {
         val name = _state.value.streamName
-        if (name.isEmpty()) return
+        // Guard against a no-op or a second tap firing a duplicate DELETE while one is in flight.
+        if (name.isEmpty() || _state.value.isDeleting) return
+        // Cancel any in-flight load so its terminal update can't re-populate stats/schema for the
+        // stream we're about to delete after the DELETE completes.
+        loadJob?.cancel()
         viewModelScope.launch {
-            _state.update { it.copy(isDeleting = true, error = null) }
+            // Clear isLoading here too: cancelling loadJob above kills any in-flight fetch before
+            // its terminal update can flip isLoading back to false, so without this a load that was
+            // running when delete started would leave the pull-to-refresh spinner stuck on the
+            // error path (delete only manages isDeleting).
+            _state.update { it.copy(isDeleting = true, isLoading = false, error = null) }
             when (val result = repository.deleteStream(name)) {
                 is ApiResult.Success -> {
                     _state.update { it.copy(isDeleting = false, deleteSuccess = true) }

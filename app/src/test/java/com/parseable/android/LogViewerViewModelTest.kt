@@ -186,6 +186,24 @@ class LogViewerViewModelTest {
     }
 
     @Test
+    fun `pullRefresh is a no-op while streaming`() {
+        viewModel.initialize("test")
+        // Page out so currentLimit is no longer at its initial 500.
+        viewModel.loadMore()
+        assertEquals(1000, viewModel.state.value.currentLimit)
+
+        viewModel.toggleStreaming()
+        assertTrue(viewModel.state.value.isStreaming)
+
+        // While live-tailing, pullRefresh must not run refresh() (which would reset the limit
+        // to 500 and race the streaming poller). Streaming stays on and the limit is untouched.
+        viewModel.pullRefresh()
+
+        assertTrue(viewModel.state.value.isStreaming)
+        assertEquals(1000, viewModel.state.value.currentLimit)
+    }
+
+    @Test
     fun `toggleStreaming starts and stops`() {
         viewModel.initialize("test")
 
@@ -250,6 +268,42 @@ class LogViewerViewModelTest {
         coVerify {
             repository.queryLogsRaw(
                 match { it.trim() == "SELECT * FROM test_stream LIMIT 50" },
+                any(),
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun `executeCustomSql strips trailing semicolon before appending LIMIT`() {
+        coEvery { repository.queryLogsRaw(any(), any(), any()) } returns ApiResult.Success(emptyList())
+
+        viewModel.initialize("test")
+        // Without stripping the ';', the appended LIMIT would land after the terminator
+        // ("...test_stream; LIMIT 5000") and produce invalid SQL.
+        viewModel.executeCustomSql("SELECT * FROM test_stream;")
+
+        coVerify {
+            repository.queryLogsRaw(
+                match { it.trim() == "SELECT * FROM test_stream LIMIT 5000" },
+                any(),
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun `executeCustomSql adds outer LIMIT when only a subquery has one`() {
+        coEvery { repository.queryLogsRaw(any(), any(), any()) } returns ApiResult.Success(emptyList())
+
+        viewModel.initialize("test")
+        // The inner LIMIT doesn't bound the outer result set, so the safety LIMIT must still
+        // be appended.
+        viewModel.executeCustomSql("SELECT * FROM (SELECT * FROM test_stream LIMIT 10) t")
+
+        coVerify {
+            repository.queryLogsRaw(
+                match { it.contains("LIMIT 10") && it.trimEnd().endsWith("LIMIT 5000") },
                 any(),
                 any(),
             )
