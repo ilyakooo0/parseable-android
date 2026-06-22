@@ -98,13 +98,26 @@ private fun parseSeverityValue(raw: String, fieldName: String): LogSeverity {
                 in 100..399 -> LogSeverity.INFO
                 else -> LogSeverity.UNKNOWN
             }
-            // Generic numeric (Java util logging style: higher = more severe)
+            // Generic numeric (higher = more severe). Two scales coexist under a bare numeric
+            // "level"/"severity" field, so handle both:
+            //  • Large-magnitude java.util.logging (FINEST=300 … SEVERE=1000).
+            //  • Small-integer structured JSON loggers (e.g. Bunyan: trace=10 … fatal=60).
+            // Without the small-integer arm, Bunyan-style levels (10..60) would all fall into the
+            // `num > 0 -> TRACE` catch-all and every such log would render as TRACE. The >= 100
+            // boundary keeps every existing java.util.logging mapping unchanged (100..399 stayed
+            // TRACE before and still does).
             else -> when {
                 num >= 1000 -> LogSeverity.FATAL
                 num >= 900 -> LogSeverity.ERROR
                 num >= 800 -> LogSeverity.WARNING
                 num >= 700 -> LogSeverity.INFO
                 num >= 400 -> LogSeverity.DEBUG
+                num >= 100 -> LogSeverity.TRACE
+                num >= 60 -> LogSeverity.FATAL
+                num >= 50 -> LogSeverity.ERROR
+                num >= 40 -> LogSeverity.WARNING
+                num >= 30 -> LogSeverity.INFO
+                num >= 20 -> LogSeverity.DEBUG
                 num > 0 -> LogSeverity.TRACE
                 else -> LogSeverity.UNKNOWN
             }

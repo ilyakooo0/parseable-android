@@ -146,6 +146,18 @@ class SeverityDetectionTest {
         assertEquals(LogSeverity.TRACE, detectSeverity(logWith("level" to "100")))
     }
 
+    @Test
+    fun `small-integer (Bunyan-style) numeric level mapping`() {
+        // Structured JSON loggers like Bunyan emit a numeric level field (trace=10 .. fatal=60,
+        // higher = more severe). These previously all collapsed into TRACE.
+        assertEquals(LogSeverity.FATAL, detectSeverity(logWith("level" to "60")))
+        assertEquals(LogSeverity.ERROR, detectSeverity(logWith("level" to "50")))
+        assertEquals(LogSeverity.WARNING, detectSeverity(logWith("level" to "40")))
+        assertEquals(LogSeverity.INFO, detectSeverity(logWith("level" to "30")))
+        assertEquals(LogSeverity.DEBUG, detectSeverity(logWith("level" to "20")))
+        assertEquals(LogSeverity.TRACE, detectSeverity(logWith("level" to "10")))
+    }
+
     // --- Priority among fields ---
 
     @Test

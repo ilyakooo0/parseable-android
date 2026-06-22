@@ -133,7 +133,11 @@ class StreamInfoViewModel @Inject constructor(
         // stream we're about to delete after the DELETE completes.
         loadJob?.cancel()
         viewModelScope.launch {
-            _state.update { it.copy(isDeleting = true, error = null) }
+            // Clear isLoading here too: cancelling loadJob above kills any in-flight fetch before
+            // its terminal update can flip isLoading back to false, so without this a load that was
+            // running when delete started would leave the pull-to-refresh spinner stuck on the
+            // error path (delete only manages isDeleting).
+            _state.update { it.copy(isDeleting = true, isLoading = false, error = null) }
             when (val result = repository.deleteStream(name)) {
                 is ApiResult.Success -> {
                     _state.update { it.copy(isDeleting = false, deleteSuccess = true) }

@@ -10,6 +10,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -28,6 +29,12 @@ object FlexibleStringSerializer : KSerializer<String> {
     override fun deserialize(decoder: Decoder): String {
         val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeString()
         val element = jsonDecoder.decodeJsonElement()
+        // JsonNull is itself a JsonPrimitive whose .content is the literal string "null". For the
+        // nullable fields this serializer is applied to, the compiler-generated nullable wrapper
+        // already intercepts a JSON null before deserialize() runs, so this never fires today. The
+        // guard exists so that if this serializer is ever attached to a non-null field, a JSON null
+        // surfaces as "" (rendered as absent) rather than the misleading literal text "null".
+        if (element is JsonNull) return ""
         return (element as? JsonPrimitive)?.content ?: element.toString()
     }
 }

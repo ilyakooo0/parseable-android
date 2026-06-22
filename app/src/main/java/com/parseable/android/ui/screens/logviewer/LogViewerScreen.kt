@@ -896,6 +896,17 @@ fun FilterBottomSheet(
     onApplyFilter: (column: String, operator: String, value: String) -> Unit,
 ) {
     var selectedColumn by remember { mutableStateOf(columns.firstOrNull() ?: "") }
+    // The filter icon is always enabled, so the sheet can open before the schema (and thus
+    // `columns`) has loaded. In that case `selectedColumn` initializes to "" and — because the
+    // remember above isn't keyed on `columns` — would stay blank even after columns arrive,
+    // leaving the Column field empty and the Apply button permanently disabled. Backfill the
+    // default once columns are available, but only while the selection is still blank so a
+    // user's manual pick isn't clobbered by a late schema refresh.
+    LaunchedEffect(columns) {
+        if (selectedColumn.isBlank()) {
+            selectedColumn = columns.firstOrNull() ?: ""
+        }
+    }
     var selectedOperator by remember { mutableStateOf("=") }
     var filterValue by remember { mutableStateOf("") }
     var columnDropdownExpanded by remember { mutableStateOf(false) }
